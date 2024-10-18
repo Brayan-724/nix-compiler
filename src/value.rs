@@ -12,11 +12,17 @@ pub enum NixValue {
     AttrSet(HashMap<String, Rc<RefCell<NixValue>>>),
 }
 
+pub type NixValueWrapped = Rc<RefCell<NixValue>>;
+
 impl fmt::Debug for NixValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             NixValue::Null => f.write_str("null"),
-            NixValue::String(s) => f.write_str(s),
+            NixValue::String(s) => {
+                f.write_char('"')?;
+                f.write_str(s)?;
+                f.write_char('"')
+            }
             NixValue::AttrSet(set) => {
                 let mut map = f.debug_map();
 
@@ -37,7 +43,11 @@ impl fmt::Display for NixValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             NixValue::Null => f.write_str("null"),
-            NixValue::String(s) => f.write_str(s),
+            NixValue::String(s) => {
+                f.write_char('"')?;
+                f.write_str(s)?;
+                f.write_char('"')
+            }
             NixValue::AttrSet(set) => {
                 let width = f.width().unwrap_or_default();
                 let outside_pad = " ".repeat(width);
@@ -89,13 +99,67 @@ impl fmt::Display for NixValue {
     }
 }
 
+impl NixValue {
+    pub fn wrap(self) -> NixValueWrapped {
+        Rc::new(RefCell::new(self))
+    }
+
+    pub fn get(&self, attr: &String) -> Result<Option<NixValueWrapped>, ()> {
+        let NixValue::AttrSet(set) = self else {
+            todo!("Error handling");
+            // return Err(());
+        };
+
+        Ok(set.get(attr).cloned())
+    }
+
+    /// Returns (new_value, old_value)
+    pub fn insert(
+        &mut self,
+        attr: String,
+        value: NixValueWrapped,
+    ) -> Option<(NixValueWrapped, Option<NixValueWrapped>)> {
+        let NixValue::AttrSet(set) = self else {
+            todo!("Error handling");
+            // return Err(());
+        };
+
+        let old = set.insert(attr, value.clone());
+
+        Some((value, old))
+    }
+}
+
+pub trait AsString {
+    fn as_string(&self) -> Option<String>;
+
+    fn is_string(&self) -> bool {
+        self.as_string().is_some()
+    }
+}
+
+impl AsString for NixValue {
+    fn as_string(&self) -> Option<String> {
+        // TODO: AttrSet to String
+        if let NixValue::String(str) = self {
+            Some(str.clone())
+        } else {
+            None
+        }
+    }
+}
+
 pub trait AsAttrSet {
-    fn as_attr_set(&self) -> Option<&HashMap<String, Rc<RefCell<NixValue>>>>;
-    fn as_attr_set_mut(&mut self) -> Option<&mut HashMap<String, Rc<RefCell<NixValue>>>>;
+    fn as_attr_set(&self) -> Option<&HashMap<String, NixValueWrapped>>;
+    fn as_attr_set_mut(&mut self) -> Option<&mut HashMap<String, NixValueWrapped>>;
+
+    fn is_attr_set(&self) -> bool {
+        self.as_attr_set().is_some()
+    }
 }
 
 impl AsAttrSet for NixValue {
-    fn as_attr_set(&self) -> Option<&HashMap<String, Rc<RefCell<NixValue>>>> {
+    fn as_attr_set(&self) -> Option<&HashMap<String, NixValueWrapped>> {
         if let NixValue::AttrSet(set) = self {
             Some(set)
         } else {
@@ -103,7 +167,7 @@ impl AsAttrSet for NixValue {
         }
     }
 
-    fn as_attr_set_mut(&mut self) -> Option<&mut HashMap<String, Rc<RefCell<NixValue>>>> {
+    fn as_attr_set_mut(&mut self) -> Option<&mut HashMap<String, NixValueWrapped>> {
         if let NixValue::AttrSet(set) = self {
             Some(set)
         } else {
