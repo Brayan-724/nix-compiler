@@ -81,13 +81,23 @@ impl Scope {
     fn visit_attrset(self: &Rc<Self>, node: ast::AttrSet) -> NixValueWrapped {
         let is_recursive = node.rec_token().is_some();
 
-        let out = NixValue::AttrSet(HashMap::new()).wrap();
+        if is_recursive {
+            let scope = self.clone().new_child();
 
-        for entry in node.entries() {
-            self.insert_entry_to_attrset(out.clone(), entry);
+            for entry in node.entries() {
+                scope.insert_entry_to_attrset(scope.variables.clone(), entry);
+            }
+
+            scope.variables.clone()
+        } else {
+            let out = NixValue::AttrSet(HashMap::new()).wrap();
+
+            for entry in node.entries() {
+                self.insert_entry_to_attrset(out.clone(), entry);
+            }
+
+            out
         }
-
-        out
     }
 
     fn visit_binop(self: &Rc<Self>, node: ast::BinOp) -> NixValueWrapped {
@@ -104,6 +114,7 @@ impl Scope {
 
     fn visit_ident(self: &Rc<Self>, node: ast::Ident) -> NixValueWrapped {
         let varname = node.ident_token().unwrap().text().to_string();
+        println!("{varname}: {self:#?}");
         self.get_variable(varname).unwrap_or_default()
     }
 
@@ -151,7 +162,8 @@ impl Scope {
 
     fn visit_select(self: &Rc<Self>, node: ast::Select) -> NixValueWrapped {
         let var = self.visit_expr(node.expr().unwrap());
-        self.resolve_attr_path(var, node.attrpath().unwrap().attrs()).unwrap_or_default()
+        self.resolve_attr_path(var, node.attrpath().unwrap().attrs())
+            .unwrap_or_default()
     }
 
     fn visit_str(self: &Rc<Self>, node: ast::Str) -> NixValueWrapped {

@@ -6,5 +6,5 @@ let
     text = "Hello ${world}${exclamation}";
   };
 in {
-  hello.world = hello.world.exclamation;
+  hello.world = hello.text;
 }

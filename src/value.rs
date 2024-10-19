@@ -9,7 +9,7 @@ pub enum NixValue {
     #[default]
     Null,
     String(String),
-    AttrSet(HashMap<String, Rc<RefCell<NixValue>>>),
+    AttrSet(HashMap<String, NixValueWrapped>),
 }
 
 pub type NixValueWrapped = Rc<RefCell<NixValue>>;
@@ -141,10 +141,10 @@ pub trait AsString {
 impl AsString for NixValue {
     fn as_string(&self) -> Option<String> {
         // TODO: AttrSet to String
-        if let NixValue::String(str) = self {
-            Some(str.clone())
-        } else {
-            None
+        match self {
+            NixValue::Null => Some(String::from("")),
+            NixValue::String(str) => Some(str.clone()),
+            NixValue::AttrSet(_) => None,
         }
     }
 }
