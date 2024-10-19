@@ -25,14 +25,9 @@
 
       devShells.${system}.default = pkgs.mkShell {
         buildInputs = with pkgs; [
+          nushell
           rust-toolchain
-          just
         ];
-
-        shellHook = ''
-          echo 'Run "just example" to run all examples or "just example {feature-name}" for a single feature example'
-          just -l
-        '';
       };
   };
 }

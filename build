@@ -1,0 +1,158 @@
+#!/usr/bin/env nu
+
+def prepare-align-list [display] {
+  ($in | each {|it| do $display $it | str length} | math max) + 4
+}
+
+def align-list [max: int, display, render] {
+  $in
+  | each {|it|
+    let width = do $display $it | str length
+    let spaces = generate {|_| {out:" ",next:null}} null | take ($max - $width) | str join ""
+
+    do $render $it | str join $spaces
+  }
+  | str join "\n"
+}
+
+
+let help_display_list = {|it| $"($it.name)($it.args)"}
+let help_render_list = {|it|
+    [$"  (ansi lmb)($it.name)(ansi reset)(ansi p)($it.args)" $"(ansi reset)($it.desc)"]
+}
+
+def "show-help list-examples" [] {
+  print "List of examples:"
+  let examples = ls examples/ 
+  | where ($it.name | str ends-with .nix) 
+  | get name 
+  | each {|it| {path: $it, file: (open $it), args: ""}}
+  | each {|it| $it | merge {name: ($it.path | str substring 9..-5)}} 
+  | each {|it| $it | merge {desc: ($it.file 
+    | split row "\n" 
+    | get 0 
+    | if ($in | str starts-with "#") {
+      $"(ansi lmb)($in | str substring 2..)"
+    } else {
+      ""
+    }
+  )}}
+
+  let max = $examples | prepare-align-list $help_display_list
+
+  $examples | align-list $max $help_display_list $help_render_list | print
+
+  # | each {|it| $"  (ansi lmb)($it.name)(ansi reset)   ($it.desc)"}
+  # | str join "\n"
+  # | print
+}
+
+def "show-help show-example" [example: string] {
+  let example = try {
+    open $"examples/($example).nix" 
+  } catch {|err| 
+    error make {
+      msg: $"\nCannot read examples/($example).nix",
+      label: {
+        text: $err.msg,
+        span: (metadata $err).span
+      },
+      help: $"To see all examples run: (ansi lmb)./build help example(ansi reset)"
+    }
+    exit 1
+  } | split row "\n"
+
+  let separation = $example 
+    | take while {|it| $it | str starts-with "#"} 
+    | length
+
+  $example 
+  | range 0..($separation)
+  | split list --regex "^#@@@"
+  | enumerate
+  | each {|block| $block.item
+    | enumerate
+    | each {|it| 
+      $it.item
+      | str substring 2..
+      | if $it.index == 0 and $block.index == 0 {
+        $"(ansi lmb)($in)(ansi reset)"
+      } else if $block.index == 1 {
+        $"(ansi lgb)($in)(ansi reset)"
+      } else {
+        $in
+      }
+    } 
+    | str join "\n"
+  } 
+  | str join "\n\n"
+  | print
+
+  print "\nCode:\n"
+
+  $example 
+  | range ($separation)..
+  | str join "\n"
+  | $"(ansi lcb)($in)"
+  | print
+}
+
+def show-help [subhelp: string, args] {
+  match [$subhelp, $args] {
+    [example []] => (show-help list-examples),
+    [example [$example]] => (show-help show-example $example)
+    [example $_] => {
+      print $"(ansi rb)Too many arguments(ansi reset)\n"
+      main help
+    }
+
+    $_ => {
+      print $"(ansi rb)Unknown help: ($subhelp)(ansi reset)\n"
+      main help
+    }
+  }
+}
+
+def "main help" [subhelp?: string, ...args] {
+  if $subhelp != null {
+    show-help $subhelp $args
+    return
+  }
+
+  let commands = [
+    [name args desc];
+    [example "" "Run all examples"]
+    [example " <EXAMPLE>" "Run a single example if it is provided"]
+    [help "" "Show this message"]
+    [help " <TOPIC>" "Show expanded help of TOPIC. See `More help`"]
+  ]
+
+  let more_help = [
+    [name args desc];
+    [example "" "List all examples"]
+    [example " <EXAMPLE>" "Show details of example"]
+  ]
+
+  let commands_spec_width = [$commands $more_help] | flatten | prepare-align-list $help_display_list;
+
+  print $"Usage: (ansi lmb)./build (ansi reset)(ansi p)[COMMAND] [...ARGS](ansi reset)"
+  print $"\nCommands:"
+  print ($commands | align-list $commands_spec_width $help_display_list $help_render_list)
+
+  print "\nMore help:"
+  print ($more_help | align-list $commands_spec_width $help_display_list $help_render_list)
+}
+
+# if "{{ EXAMPLE }}" == "*" {              
+#   just all-examples                      
+# } else {                                 
+#   cargo run -- example/{{ EXAMPLE }}.rs  
+# }
+
+def all-examples [] {
+    let examples = ls examples | where ($it.name | str ends-with .nix)
+    echo $examples
+}
+
+def main [] {
+}
