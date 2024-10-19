@@ -21,9 +21,8 @@ let help_render_list = {|it|
     [$"  (ansi lmb)($it.name)(ansi reset)(ansi p)($it.args)" $"(ansi reset)($it.desc)"]
 }
 
-def "show-help list-examples" [] {
-  print "List of examples:"
-  let examples = ls examples/ 
+def get-all-examples [] {
+  ls examples/ 
   | where ($it.name | str ends-with .nix) 
   | get name 
   | each {|it| {path: $it, file: (open $it), args: ""}}
@@ -37,18 +36,10 @@ def "show-help list-examples" [] {
       ""
     }
   )}}
-
-  let max = $examples | prepare-align-list $help_display_list
-
-  $examples | align-list $max $help_display_list $help_render_list | print
-
-  # | each {|it| $"  (ansi lmb)($it.name)(ansi reset)   ($it.desc)"}
-  # | str join "\n"
-  # | print
 }
 
-def "show-help show-example" [example: string] {
-  let example = try {
+def parse-example [example] {
+  let example_file = try {
     open $"examples/($example).nix" 
   } catch {|err| 
     error make {
@@ -62,11 +53,11 @@ def "show-help show-example" [example: string] {
     exit 1
   } | split row "\n"
 
-  let separation = $example 
+  let separation = $example_file
     | take while {|it| $it | str starts-with "#"} 
     | length
 
-  $example 
+  let description = $example_file
   | range 0..($separation)
   | split list --regex "^#@@@"
   | enumerate
@@ -86,15 +77,30 @@ def "show-help show-example" [example: string] {
     | str join "\n"
   } 
   | str join "\n\n"
-  | print
 
-  print "\nCode:\n"
-
-  $example 
+  let code = $example_file
   | range ($separation)..
   | str join "\n"
   | $"(ansi lcb)($in)"
-  | print
+
+  { path: $"($env.PWD)/examples/($example).nix", description: $description, code: $code }
+}
+
+def "show-help list-examples" [] {
+  let examples = get-all-examples
+
+  let max = $examples | prepare-align-list $help_display_list
+
+  print "List of examples:"
+  $examples | align-list $max $help_display_list $help_render_list | print
+}
+
+def "show-help show-example" [example: string] {
+  let example = (parse-example $example)
+
+  print $example.description
+  print "\nCode:\n"
+  print $example.code
 }
 
 def show-help [subhelp: string, args] {
@@ -143,16 +149,28 @@ def "main help" [subhelp?: string, ...args] {
   print ($more_help | align-list $commands_spec_width $help_display_list $help_render_list)
 }
 
-# if "{{ EXAMPLE }}" == "*" {              
-#   just all-examples                      
-# } else {                                 
-#   cargo run -- example/{{ EXAMPLE }}.rs  
-# }
-
 def all-examples [] {
     let examples = ls examples | where ($it.name | str ends-with .nix)
     echo $examples
 }
 
+def "main example" [example?: string] {
+  if $example == null {
+    return (all-examples)
+  }
+
+  let example = (parse-example $example)
+
+  print $"(ansi d)($example.path)(ansi reset)"
+  print $example.description
+  print "\nCode:\n"
+  print $example.code
+  print $"\n(ansi wb)cargo run -- (ansi d)($example.path)(ansi reset)"
+
+  cargo run -- ($example.path)
+}
+
 def main [] {
+  print -e $"(ansi red)TODO: main entry(ansi reset)"
+  main help
 }
