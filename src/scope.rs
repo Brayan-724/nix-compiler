@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::rc::Rc;
 
 use rnix::ast;
@@ -25,6 +24,18 @@ impl Scope {
             variables: NixValue::AttrSet(HashMap::new()).wrap(),
             parent: Some(self),
         })
+    }
+
+    pub fn set_variable(
+        self: &Rc<Self>,
+        varname: String,
+        value: NixValueWrapped,
+    ) -> Option<NixValueWrapped> {
+        self.variables
+            .borrow_mut()
+            .as_attr_set_mut()
+            .unwrap()
+            .insert(varname, value)
     }
 
     pub fn get_variable(self: &Rc<Self>, varname: String) -> Option<NixValueWrapped> {

@@ -4,12 +4,23 @@ use std::fmt::{self, Write};
 use std::ops::Deref;
 use std::rc::Rc;
 
+use rnix::ast;
+
+use crate::scope::Scope;
+
+#[derive(Clone)]
+pub enum NixLambdaParam {
+    Ident(String),
+    Pattern(ast::Pattern),
+}
+
 #[derive(Clone, Default)]
 pub enum NixValue {
+    AttrSet(HashMap<String, NixValueWrapped>),
+    Lambda(Rc<Scope>, NixLambdaParam, ast::Expr),
     #[default]
     Null,
     String(String),
-    AttrSet(HashMap<String, NixValueWrapped>),
 }
 
 pub type NixValueWrapped = Rc<RefCell<NixValue>>;
@@ -17,12 +28,6 @@ pub type NixValueWrapped = Rc<RefCell<NixValue>>;
 impl fmt::Debug for NixValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            NixValue::Null => f.write_str("null"),
-            NixValue::String(s) => {
-                f.write_char('"')?;
-                f.write_str(s)?;
-                f.write_char('"')
-            }
             NixValue::AttrSet(set) => {
                 let mut map = f.debug_map();
 
@@ -35,6 +40,13 @@ impl fmt::Debug for NixValue {
 
                 map.finish()
             }
+            NixValue::Lambda(..) => f.write_str("<lamda>"),
+            NixValue::Null => f.write_str("null"),
+            NixValue::String(s) => {
+                f.write_char('"')?;
+                f.write_str(s)?;
+                f.write_char('"')
+            }
         }
     }
 }
@@ -42,12 +54,6 @@ impl fmt::Debug for NixValue {
 impl fmt::Display for NixValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            NixValue::Null => f.write_str("null"),
-            NixValue::String(s) => {
-                f.write_char('"')?;
-                f.write_str(s)?;
-                f.write_char('"')
-            }
             NixValue::AttrSet(set) => {
                 let width = f.width().unwrap_or_default();
                 let outside_pad = " ".repeat(width);
@@ -95,6 +101,13 @@ impl fmt::Display for NixValue {
 
                 f.write_char('}')
             }
+            NixValue::Lambda(..) => f.write_str("<lamda>"),
+            NixValue::Null => f.write_str("null"),
+            NixValue::String(s) => {
+                f.write_char('"')?;
+                f.write_str(s)?;
+                f.write_char('"')
+            }
         }
     }
 }
@@ -128,11 +141,24 @@ impl NixValue {
 
         Some((value, old))
     }
+
+    pub fn as_lamda(&self) -> Option<(Rc<Scope>, &NixLambdaParam, &ast::Expr)> {
+        if let NixValue::Lambda(scope, param, expr) = self {
+            Some((scope.clone(), param, expr))
+        } else {
+            None
+        }
+    }
+
+    pub fn is_lamda(&self) -> bool {
+        matches!(self, NixValue::Lambda(..))
+    }
 }
 
 pub trait AsString {
     fn as_string(&self) -> Option<String>;
 
+    #[allow(dead_code)]
     fn is_string(&self) -> bool {
         self.as_string().is_some()
     }
@@ -142,9 +168,10 @@ impl AsString for NixValue {
     fn as_string(&self) -> Option<String> {
         // TODO: AttrSet to String
         match self {
+            NixValue::AttrSet(_) => None,
+            NixValue::Lambda(..) => None,
             NixValue::Null => Some(String::from("")),
             NixValue::String(str) => Some(str.clone()),
-            NixValue::AttrSet(_) => None,
         }
     }
 }

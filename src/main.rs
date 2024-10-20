@@ -9,7 +9,7 @@ use scope::Scope;
 fn main() {
     let mut iter = env::args().skip(1).peekable();
     if iter.peek().is_none() {
-        eprintln!("Usage: dump-ast <file>");
+        eprintln!("Usage: nix-compiler <file>");
         return;
     }
     for file in iter {
@@ -27,7 +27,7 @@ fn main() {
         }
 
         let root = parse.tree();
-        println!("{:#?}", root);
+        // println!("{:#?}", root);
 
         let root = root.expr().unwrap();
 

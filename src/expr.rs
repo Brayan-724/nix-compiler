@@ -1,12 +1,11 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::rc::Rc;
 
 use rnix::ast::{self, AstToken, HasEntry};
 
 use crate::scope::Scope;
-use crate::value::{AsAttrSet, AsString, NixValue, NixValueWrapped};
+use crate::value::{AsAttrSet, AsString, NixLambdaParam, NixValue, NixValueWrapped};
 
 #[allow(unused_variables, reason = "todo")]
 impl Scope {
@@ -71,7 +70,77 @@ impl Scope {
     }
 
     fn visit_apply(self: &Rc<Self>, node: ast::Apply) -> NixValueWrapped {
-        todo!()
+        let lambda = self.visit_expr(node.lambda().unwrap());
+
+        let lambda = lambda.borrow();
+        let Some((scope, param, expr)) = lambda.as_lamda() else {
+            todo!("Error handling");
+        };
+
+        let scope = scope.new_child();
+
+        let argument_var = self.visit_expr(node.argument().unwrap());
+
+        match param {
+            NixLambdaParam::Pattern(pattern) => {
+                let argument = argument_var.borrow();
+                let Some(argument) = argument.as_attr_set() else {
+                    todo!("Error handling")
+                };
+
+                if let Some(pat_bind) = pattern.pat_bind() {
+                    let varname = pat_bind
+                        .ident()
+                        .unwrap()
+                        .ident_token()
+                        .unwrap()
+                        .text()
+                        .to_owned();
+
+                    // TODO: Should set only the unused keys instead of the argument
+                    scope.set_variable(varname, argument_var.clone());
+                }
+
+                let has_ellipsis = pattern.ellipsis_token().is_some();
+
+                let mut unused = (!has_ellipsis).then(|| argument.keys().collect::<Vec<_>>());
+
+                for entry in pattern.pat_entries() {
+                    let varname = entry.ident().unwrap().ident_token().unwrap();
+                    let varname = varname.text();
+
+                    if let Some(unused) = unused.as_mut() {
+                        unused.swap_remove(
+                            unused.iter().position(|&key| key == varname).expect("Hola"),
+                        );
+                    }
+
+                    let Some(value) = argument
+                        .get(varname)
+                        .cloned()
+                        .or_else(|| entry.default().map(|expr| scope.visit_expr(expr)))
+                    else {
+                        todo!("Require {varname}");
+                    };
+
+                    scope.set_variable(varname.to_owned(), value.clone());
+                }
+
+                if let Some(unused) = unused {
+                    if !unused.is_empty() {
+                        todo!("Handle error: Unused keys: {unused:?}")
+                    }
+                }
+            }
+            NixLambdaParam::Ident(param) => {
+                assert!(
+                    scope.set_variable(param.clone(), argument_var).is_none(),
+                    "Variable {param} already exists"
+                );
+            }
+        }
+
+        scope.visit_expr(expr.clone())
     }
 
     fn visit_assert(self: &Rc<Self>, node: ast::Assert) -> NixValueWrapped {
@@ -114,8 +183,9 @@ impl Scope {
 
     fn visit_ident(self: &Rc<Self>, node: ast::Ident) -> NixValueWrapped {
         let varname = node.ident_token().unwrap().text().to_string();
-        println!("{varname}: {self:#?}");
-        self.get_variable(varname).unwrap_or_default()
+        self.get_variable(varname.clone()).expect(&format!(
+            "Variable \"{varname}\" doesn't exists on {self:#?}"
+        ))
     }
 
     fn visit_ifelse(self: &Rc<Self>, node: ast::IfElse) -> NixValueWrapped {
@@ -123,7 +193,20 @@ impl Scope {
     }
 
     fn visit_lambda(self: &Rc<Self>, node: ast::Lambda) -> NixValueWrapped {
-        todo!()
+        let param = match node.param().unwrap() {
+            ast::Param::Pattern(pattern) => NixLambdaParam::Pattern(pattern),
+            ast::Param::IdentParam(ident) => NixLambdaParam::Ident(
+                ident
+                    .ident()
+                    .unwrap()
+                    .ident_token()
+                    .unwrap()
+                    .text()
+                    .to_owned(),
+            ),
+        };
+
+        NixValue::Lambda(self.clone().new_child(), param, node.body().unwrap()).wrap()
     }
 
     fn visit_legacylet(self: &Rc<Self>, node: ast::LegacyLet) -> NixValueWrapped {
