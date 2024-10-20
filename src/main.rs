@@ -33,11 +33,9 @@ fn main() {
         let root = parse.tree();
         // println!("{:#?}", root);
 
-        let root = root.expr().unwrap();
-
         let scope = Scope::new();
 
-        let result = scope.visit_expr(root);
+        let result = scope.visit_root(root);
         let result = result.as_ref().borrow();
 
         println!("Result (Expanded): {result:#}");

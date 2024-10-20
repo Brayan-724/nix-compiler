@@ -69,7 +69,7 @@ impl Scope {
         }
     }
 
-    fn visit_apply(self: &Rc<Self>, node: ast::Apply) -> NixValueWrapped {
+    pub fn visit_apply(self: &Rc<Self>, node: ast::Apply) -> NixValueWrapped {
         let lambda = self.visit_expr(node.lambda().unwrap());
 
         let lambda = lambda.borrow();
@@ -143,11 +143,11 @@ impl Scope {
         scope.visit_expr(expr.clone())
     }
 
-    fn visit_assert(self: &Rc<Self>, node: ast::Assert) -> NixValueWrapped {
+    pub fn visit_assert(self: &Rc<Self>, node: ast::Assert) -> NixValueWrapped {
         todo!()
     }
 
-    fn visit_attrset(self: &Rc<Self>, node: ast::AttrSet) -> NixValueWrapped {
+    pub fn visit_attrset(self: &Rc<Self>, node: ast::AttrSet) -> NixValueWrapped {
         let is_recursive = node.rec_token().is_some();
 
         if is_recursive {
@@ -169,30 +169,30 @@ impl Scope {
         }
     }
 
-    fn visit_binop(self: &Rc<Self>, node: ast::BinOp) -> NixValueWrapped {
+    pub fn visit_binop(self: &Rc<Self>, node: ast::BinOp) -> NixValueWrapped {
         todo!()
     }
 
-    fn visit_error(self: &Rc<Self>, node: ast::Error) -> NixValueWrapped {
+    pub fn visit_error(self: &Rc<Self>, node: ast::Error) -> NixValueWrapped {
         todo!()
     }
 
-    fn visit_hasattr(self: &Rc<Self>, node: ast::HasAttr) -> NixValueWrapped {
+    pub fn visit_hasattr(self: &Rc<Self>, node: ast::HasAttr) -> NixValueWrapped {
         todo!()
     }
 
-    fn visit_ident(self: &Rc<Self>, node: ast::Ident) -> NixValueWrapped {
+    pub fn visit_ident(self: &Rc<Self>, node: ast::Ident) -> NixValueWrapped {
         let varname = node.ident_token().unwrap().text().to_string();
         self.get_variable(varname.clone()).expect(&format!(
             "Variable \"{varname}\" doesn't exists on {self:#?}"
         ))
     }
 
-    fn visit_ifelse(self: &Rc<Self>, node: ast::IfElse) -> NixValueWrapped {
+    pub fn visit_ifelse(self: &Rc<Self>, node: ast::IfElse) -> NixValueWrapped {
         todo!()
     }
 
-    fn visit_lambda(self: &Rc<Self>, node: ast::Lambda) -> NixValueWrapped {
+    pub fn visit_lambda(self: &Rc<Self>, node: ast::Lambda) -> NixValueWrapped {
         let param = match node.param().unwrap() {
             ast::Param::Pattern(pattern) => NixLambdaParam::Pattern(pattern),
             ast::Param::IdentParam(ident) => NixLambdaParam::Ident(
@@ -209,11 +209,11 @@ impl Scope {
         NixValue::Lambda(self.clone().new_child(), param, node.body().unwrap()).wrap()
     }
 
-    fn visit_legacylet(self: &Rc<Self>, node: ast::LegacyLet) -> NixValueWrapped {
+    pub fn visit_legacylet(self: &Rc<Self>, node: ast::LegacyLet) -> NixValueWrapped {
         todo!()
     }
 
-    fn visit_letin(self: &Rc<Self>, node: ast::LetIn) -> NixValueWrapped {
+    pub fn visit_letin(self: &Rc<Self>, node: ast::LetIn) -> NixValueWrapped {
         for entry in node.entries() {
             self.insert_entry_to_attrset(self.variables.clone(), entry);
         }
@@ -223,33 +223,33 @@ impl Scope {
         self.visit_expr(body)
     }
 
-    fn visit_list(self: &Rc<Self>, node: ast::List) -> NixValueWrapped {
+    pub fn visit_list(self: &Rc<Self>, node: ast::List) -> NixValueWrapped {
         todo!()
     }
 
-    fn visit_literal(self: &Rc<Self>, node: ast::Literal) -> NixValueWrapped {
+    pub fn visit_literal(self: &Rc<Self>, node: ast::Literal) -> NixValueWrapped {
         todo!()
     }
 
-    fn visit_paren(self: &Rc<Self>, node: ast::Paren) -> NixValueWrapped {
+    pub fn visit_paren(self: &Rc<Self>, node: ast::Paren) -> NixValueWrapped {
         self.visit_expr(node.expr().unwrap())
     }
 
-    fn visit_path(self: &Rc<Self>, node: ast::Path) -> NixValueWrapped {
+    pub fn visit_path(self: &Rc<Self>, node: ast::Path) -> NixValueWrapped {
         todo!()
     }
 
-    fn visit_root(self: &Rc<Self>, node: ast::Root) -> NixValueWrapped {
-        todo!()
+    pub fn visit_root(self: &Rc<Self>, node: ast::Root) -> NixValueWrapped {
+        self.visit_expr(node.expr().unwrap())
     }
 
-    fn visit_select(self: &Rc<Self>, node: ast::Select) -> NixValueWrapped {
+    pub fn visit_select(self: &Rc<Self>, node: ast::Select) -> NixValueWrapped {
         let var = self.visit_expr(node.expr().unwrap());
         self.resolve_attr_path(var, node.attrpath().unwrap().attrs())
             .unwrap_or_default()
     }
 
-    fn visit_str(self: &Rc<Self>, node: ast::Str) -> NixValueWrapped {
+    pub fn visit_str(self: &Rc<Self>, node: ast::Str) -> NixValueWrapped {
         let mut content = String::new();
 
         for part in node.parts() {
@@ -270,11 +270,11 @@ impl Scope {
         Rc::new(RefCell::new(NixValue::String(content)))
     }
 
-    fn visit_unaryop(self: &Rc<Self>, node: ast::UnaryOp) -> NixValueWrapped {
+    pub fn visit_unaryop(self: &Rc<Self>, node: ast::UnaryOp) -> NixValueWrapped {
         todo!()
     }
 
-    fn visit_with(self: &Rc<Self>, node: ast::With) -> NixValueWrapped {
+    pub fn visit_with(self: &Rc<Self>, node: ast::With) -> NixValueWrapped {
         let namespace = self.visit_expr(node.namespace().unwrap());
 
         if !namespace.borrow().is_attr_set() {
