@@ -232,7 +232,7 @@ impl Scope {
     }
 
     fn visit_paren(self: &Rc<Self>, node: ast::Paren) -> NixValueWrapped {
-        todo!()
+        self.visit_expr(node.expr().unwrap())
     }
 
     fn visit_path(self: &Rc<Self>, node: ast::Path) -> NixValueWrapped {
