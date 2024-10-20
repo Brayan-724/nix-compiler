@@ -275,6 +275,14 @@ impl Scope {
     }
 
     fn visit_with(self: &Rc<Self>, node: ast::With) -> NixValueWrapped {
-        todo!()
+        let namespace = self.visit_expr(node.namespace().unwrap());
+
+        if !namespace.borrow().is_attr_set() {
+            todo!("Error handling")
+        }
+
+        let scope = self.clone().new_child_from(namespace);
+
+        scope.visit_expr(node.body().unwrap())
     }
 }

@@ -26,6 +26,13 @@ impl Scope {
         })
     }
 
+    pub fn new_child_from(self: Rc<Self>, variables: NixValueWrapped) -> Rc<Scope> {
+        Rc::new(Scope {
+            variables,
+            parent: Some(self),
+        })
+    }
+
     pub fn set_variable(
         self: &Rc<Self>,
         varname: String,
