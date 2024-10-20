@@ -23,7 +23,11 @@ fn main() {
         let parse = rnix::Root::parse(&content);
 
         for error in parse.errors() {
-            println!("error: {}", error);
+            println!("\x1b[31merror: {}\x1b[0m", error);
+        }
+
+        if !parse.errors().is_empty() {
+            std::process::exit(1);
         }
 
         let root = parse.tree();
