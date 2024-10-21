@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use rnix::ast;
 
-use crate::value::{AsAttrSet, NixValue, NixValueBuiltin, NixValueWrapped};
+use crate::value::{AsAttrSet, AsString, NixValue, NixValueBuiltin, NixValueWrapped};
 
 #[derive(Debug)]
 pub struct FileScope {
@@ -161,7 +161,11 @@ impl Scope {
     pub fn resolve_attr(self: &Rc<Self>, attr: ast::Attr) -> String {
         match attr {
             ast::Attr::Ident(ident) => ident.ident_token().unwrap().text().to_owned(),
-            ast::Attr::Dynamic(_) => todo!(),
+            ast::Attr::Dynamic(dynamic) => self
+                .visit_expr(dynamic.expr().unwrap())
+                .borrow()
+                .as_string()
+                .expect("Cannot cast as string"),
             ast::Attr::Str(_) => todo!(),
         }
     }
