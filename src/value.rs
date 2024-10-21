@@ -132,7 +132,6 @@ impl NixValue {
     pub fn get(&self, attr: &String) -> Result<Option<NixValueWrapped>, ()> {
         let NixValue::AttrSet(set) = self else {
             todo!("Error handling");
-            // return Err(());
         };
 
         Ok(set.get(attr).cloned())
