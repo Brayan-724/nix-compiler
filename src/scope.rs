@@ -1,26 +1,77 @@
 use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use rnix::ast;
 
-use crate::value::{AsAttrSet, NixValue, NixValueWrapped};
+use crate::value::{AsAttrSet, NixValue, NixValueBuiltin, NixValueWrapped};
+
+#[derive(Debug)]
+pub struct FileScope {
+    pub path: PathBuf
+}
+
+impl FileScope {
+    pub fn from_path(path: impl AsRef<Path>) -> Rc<Self> {
+        Rc::new(FileScope {
+            path: path.as_ref().to_path_buf()
+        })
+    }
+
+    pub fn evaluate(self: Rc<Self>) -> Result<NixValueWrapped, ()> {
+        let content = fs::read_to_string(&self.path).unwrap();
+
+        let parse = rnix::Root::parse(&content);
+
+        for error in parse.errors() {
+            println!("\x1b[31merror: {}\x1b[0m", error);
+        }
+
+        if !parse.errors().is_empty() {
+            return Err(());
+        }
+
+        let root = parse.tree();
+
+        let scope = Scope::new_with_builtins(self);
+
+        Ok(scope.visit_root(root))
+    }
+}
 
 #[derive(Debug)]
 pub struct Scope {
+    pub file: Rc<FileScope>,
     pub variables: NixValueWrapped,
     pub parent: Option<Rc<Scope>>,
 }
 
 impl Scope {
-    pub fn new() -> Rc<Self> {
-        Rc::new(Self {
-            variables: NixValue::AttrSet(HashMap::new()).wrap(),
+    pub fn new_with_builtins(file_scope: Rc<FileScope>) -> Rc<Self> {
+        let mut variables = HashMap::new();
+
+        variables.insert(
+            "import".to_owned(),
+            NixValue::Builtin(NixValueBuiltin::Import).wrap(),
+        );
+
+        let parent = Rc::new(Scope {
+            file: file_scope.clone(),
+            variables: NixValue::AttrSet(variables).wrap(),
             parent: None,
+        });
+
+        Rc::new(Self {
+            file: file_scope,
+            variables: NixValue::AttrSet(HashMap::new()).wrap(),
+            parent: Some(parent),
         })
     }
 
     pub fn new_child(self: Rc<Self>) -> Rc<Scope> {
         Rc::new(Scope {
+            file: self.file.clone(),
             variables: NixValue::AttrSet(HashMap::new()).wrap(),
             parent: Some(self),
         })
@@ -28,6 +79,7 @@ impl Scope {
 
     pub fn new_child_from(self: Rc<Self>, variables: NixValueWrapped) -> Rc<Scope> {
         Rc::new(Scope {
+            file: self.file.clone(),
             variables,
             parent: Some(self),
         })

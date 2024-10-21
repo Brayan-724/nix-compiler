@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{self, Write};
 use std::ops::Deref;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use rnix::ast;
@@ -14,12 +15,19 @@ pub enum NixLambdaParam {
     Pattern(ast::Pattern),
 }
 
+#[derive(Clone)]
+pub enum NixValueBuiltin {
+    Import,
+}
+
 #[derive(Clone, Default)]
 pub enum NixValue {
     AttrSet(HashMap<String, NixValueWrapped>),
+    Builtin(NixValueBuiltin),
     Lambda(Rc<Scope>, NixLambdaParam, ast::Expr),
     #[default]
     Null,
+    Path(PathBuf),
     String(String),
 }
 
@@ -40,8 +48,10 @@ impl fmt::Debug for NixValue {
 
                 map.finish()
             }
+            NixValue::Builtin(NixValueBuiltin::Import) => f.write_str("import"),
             NixValue::Lambda(..) => f.write_str("<lamda>"),
             NixValue::Null => f.write_str("null"),
+            NixValue::Path(path) => fmt::Debug::fmt(path, f),
             NixValue::String(s) => {
                 f.write_char('"')?;
                 f.write_str(s)?;
@@ -101,8 +111,10 @@ impl fmt::Display for NixValue {
 
                 f.write_char('}')
             }
+            NixValue::Builtin(NixValueBuiltin::Import) => f.write_str("import"),
             NixValue::Lambda(..) => f.write_str("<lamda>"),
             NixValue::Null => f.write_str("null"),
+            NixValue::Path(path) => f.write_fmt(format_args!("{}", path.display())),
             NixValue::String(s) => {
                 f.write_char('"')?;
                 f.write_str(s)?;
@@ -149,10 +161,6 @@ impl NixValue {
             None
         }
     }
-
-    pub fn is_lamda(&self) -> bool {
-        matches!(self, NixValue::Lambda(..))
-    }
 }
 
 pub trait AsString {
@@ -169,9 +177,10 @@ impl AsString for NixValue {
         // TODO: AttrSet to String
         match self {
             NixValue::AttrSet(_) => None,
-            NixValue::Lambda(..) => None,
             NixValue::Null => Some(String::from("")),
+            NixValue::Path(path) => Some(path.display().to_string()),
             NixValue::String(str) => Some(str.clone()),
+            _ => None,
         }
     }
 }
