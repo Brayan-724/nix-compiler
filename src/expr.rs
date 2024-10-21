@@ -266,7 +266,7 @@ impl Scope {
     }
 
     pub fn visit_list(self: &Rc<Self>, node: ast::List) -> NixValueWrapped {
-        todo!()
+        NixValue::List(node.items().map(|expr| self.visit_expr(expr)).collect()).wrap()
     }
 
     pub fn visit_literal(self: &Rc<Self>, node: ast::Literal) -> NixValueWrapped {

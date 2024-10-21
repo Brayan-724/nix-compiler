@@ -25,6 +25,7 @@ pub enum NixValue {
     AttrSet(HashMap<String, NixValueWrapped>),
     Builtin(NixValueBuiltin),
     Lambda(Rc<Scope>, NixLambdaParam, ast::Expr),
+    List(Vec<NixValueWrapped>),
     #[default]
     Null,
     Path(PathBuf),
@@ -50,6 +51,15 @@ impl fmt::Debug for NixValue {
             }
             NixValue::Builtin(NixValueBuiltin::Import) => f.write_str("import"),
             NixValue::Lambda(..) => f.write_str("<lamda>"),
+            NixValue::List(list) => {
+                let mut debug_list = f.debug_list();
+
+                for item in list {
+                    debug_list.entry(item.borrow().deref());
+                }
+
+                debug_list.finish()
+            }
             NixValue::Null => f.write_str("null"),
             NixValue::Path(path) => fmt::Debug::fmt(path, f),
             NixValue::String(s) => {
@@ -113,6 +123,48 @@ impl fmt::Display for NixValue {
             }
             NixValue::Builtin(NixValueBuiltin::Import) => f.write_str("import"),
             NixValue::Lambda(..) => f.write_str("<lamda>"),
+            NixValue::List(list) => {
+                let width = f.width().unwrap_or_default();
+                let outside_pad = " ".repeat(width);
+
+                let width = width + 2;
+                let pad = " ".repeat(width);
+
+                f.write_char('[')?;
+
+                if f.alternate() {
+                    f.write_char('\n')?;
+                }
+
+                for value in list {
+                    let value = value.as_ref().borrow();
+                    let value = value.deref();
+
+                    if f.alternate() {
+                        f.write_str(&pad)?;
+                    } else {
+                        f.write_char(' ')?;
+                    }
+
+                    if f.alternate() {
+                        f.write_fmt(format_args!("{value:#width$}"))?;
+                    } else {
+                        fmt::Display::fmt(value, f)?;
+                    }
+
+                    if f.alternate() {
+                        f.write_char('\n')?;
+                    }
+                }
+
+                if f.alternate() {
+                    f.write_str(&outside_pad)?;
+                } else {
+                    f.write_char(' ')?;
+                }
+
+                f.write_char(']')
+            }
             NixValue::Null => f.write_str("null"),
             NixValue::Path(path) => f.write_fmt(format_args!("{}", path.display())),
             NixValue::String(s) => {
