@@ -41,7 +41,37 @@ impl Scope {
 
     fn insert_entry_to_attrset(self: &Rc<Self>, out: NixValueWrapped, entry: ast::Entry) {
         match entry {
-            ast::Entry::Inherit(_) => todo!(),
+            ast::Entry::Inherit(entry) => {
+                let mut from = entry
+                    .from()
+                    .map(|from| self.visit_expr(from.expr().unwrap()));
+
+                for attr in entry.attrs() {
+                    let attr = self.resolve_attr(attr);
+
+                    if let Some(from) = from.as_mut() {
+                        let value = from
+                            .borrow()
+                            .as_attr_set()
+                            .unwrap()
+                            .get(&attr)
+                            .cloned()
+                            .unwrap();
+
+                        out.borrow_mut()
+                            .as_attr_set_mut()
+                            .unwrap()
+                            .insert(attr, value);
+                    } else {
+                        let value = self.get_variable(attr.clone()).unwrap();
+
+                        out.borrow_mut()
+                            .as_attr_set_mut()
+                            .unwrap()
+                            .insert(attr, value);
+                    }
+                }
+            }
             ast::Entry::AttrpathValue(entry) => {
                 self.insert_to_attrset(out, entry.attrpath().unwrap(), entry.value().unwrap())
             }
@@ -82,7 +112,7 @@ impl Scope {
             NixValue::Builtin(NixValueBuiltin::Import) => {
                 let argument = self.visit_expr(node.argument().unwrap());
                 crate::builtins::import(argument)
-            },
+            }
             NixValue::Lambda(scope, param, expr) => {
                 let scope = scope.clone().new_child();
 

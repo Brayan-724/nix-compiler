@@ -9,13 +9,13 @@ use crate::value::{AsAttrSet, NixValue, NixValueBuiltin, NixValueWrapped};
 
 #[derive(Debug)]
 pub struct FileScope {
-    pub path: PathBuf
+    pub path: PathBuf,
 }
 
 impl FileScope {
     pub fn from_path(path: impl AsRef<Path>) -> Rc<Self> {
         Rc::new(FileScope {
-            path: path.as_ref().to_path_buf()
+            path: path.as_ref().to_path_buf(),
         })
     }
 
