@@ -390,9 +390,17 @@ impl Scope {
 
     pub fn visit_unaryop(self: &Rc<Self>, node: ast::UnaryOp) -> NixVar {
         let value = self.visit_expr(node.expr().unwrap());
+        let value = value.resolve();
+        let value = value.borrow();
 
         match node.operator().unwrap() {
-            ast::UnaryOpKind::Invert => todo!(),
+            ast::UnaryOpKind::Invert => {
+                let Some(value) = value.as_bool() else {
+                    todo!("Error handling");
+                };
+
+                NixValue::Bool(!value).wrap_var()
+            },
             ast::UnaryOpKind::Negate => todo!(),
         }
     }
