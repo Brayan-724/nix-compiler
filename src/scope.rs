@@ -58,17 +58,20 @@ impl Scope {
             };
         }
 
-        let mut variables = HashMap::new();
+        let mut globals = HashMap::new();
+        let mut builtins = HashMap::new();
 
-        insert!(variables; import = NixValue::Builtin(NixValueBuiltin::Import));
+        insert!(globals; import = NixValue::Builtin(NixValueBuiltin::Import));
+        insert!(builtins; import = NixValue::Builtin(NixValueBuiltin::Import));
 
-        let builtins = HashMap::new();
+        insert!(globals; abort = NixValue::Builtin(NixValueBuiltin::Abort));
+        insert!(builtins; abort = NixValue::Builtin(NixValueBuiltin::Abort));
 
-        insert!(variables; builtins = NixValue::AttrSet(builtins));
+        insert!(globals; builtins = NixValue::AttrSet(builtins));
 
         let parent = Rc::new(Scope {
             file: file_scope.clone(),
-            variables: NixValue::AttrSet(variables).wrap_var(),
+            variables: NixValue::AttrSet(globals).wrap_var(),
             parent: None,
         });
 
@@ -136,7 +139,10 @@ impl Scope {
         let attr_set = attr_set.resolve();
         let attr_set = attr_set.borrow();
 
-        attr_set.get(&last_attr).unwrap()
+        attr_set.get(&last_attr).unwrap().or_else(|| {
+            println!("Cannot get {last_attr}");
+            None
+        })
     }
 
     pub fn resolve_attr_set_path<'a>(

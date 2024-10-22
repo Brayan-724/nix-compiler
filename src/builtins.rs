@@ -6,6 +6,23 @@ use crate::flake::resolve_flake;
 use crate::scope::FileScope;
 use crate::value::{AsString, NixValue, NixVar};
 
+#[derive(Clone)]
+pub enum NixValueBuiltin {
+    Abort,
+    Import,
+}
+
+pub fn abort(argument: NixVar) -> ! {
+    let argument = argument.resolve();
+    let argument = argument.borrow();
+
+    let Some(message) = argument.as_string() else {
+        todo!("Error handling: {argument:#?}")
+    };
+
+    panic!("Aborting: {message}")
+}
+
 pub fn import(argument: NixVar) -> NixVar {
     let argument = argument.resolve();
     let argument = argument.borrow();

@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use rnix::ast::{self, AstToken, HasEntry};
 
+use crate::builtins;
 use crate::scope::Scope;
 use crate::value::{
     AsAttrSet, AsString, LazyNixValue, NixLambdaParam, NixValue, NixValueBuiltin, NixVar,
@@ -112,9 +113,13 @@ impl Scope {
         let lambda = lambda.borrow();
 
         match lambda.deref() {
+            NixValue::Builtin(NixValueBuiltin::Abort) => {
+                let argument = self.visit_expr(node.argument().unwrap());
+                builtins::abort(argument)
+            }
             NixValue::Builtin(NixValueBuiltin::Import) => {
                 let argument = self.visit_expr(node.argument().unwrap());
-                crate::builtins::import(argument)
+                builtins::import(argument)
             }
             NixValue::Lambda(scope, param, expr) => {
                 let scope = scope.clone().new_child();
@@ -217,7 +222,6 @@ impl Scope {
 
     pub fn visit_binop(self: &Rc<Self>, node: ast::BinOp) -> NixVar {
         let lhs = self.visit_expr(node.lhs().unwrap());
-        let rhs = self.visit_expr(node.rhs().unwrap());
 
         match node.operator().unwrap() {
             ast::BinOpKind::Concat => todo!(),
@@ -234,7 +238,20 @@ impl Scope {
             ast::BinOpKind::More => todo!(),
             ast::BinOpKind::MoreOrEq => todo!(),
             ast::BinOpKind::NotEqual => todo!(),
-            ast::BinOpKind::Or => todo!(),
+            ast::BinOpKind::Or => {
+                let Some(lhs_value) = lhs.resolve().borrow().as_bool() else {
+                    todo!("Error handling");
+                };
+
+                if lhs_value {
+                    lhs
+                } else {
+                    let rhs = self.visit_expr(node.rhs().unwrap());
+
+                    rhs
+                }
+
+            },
         }
     }
 

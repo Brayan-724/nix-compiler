@@ -13,17 +13,13 @@ pub use var::NixVar;
 
 use rnix::ast;
 
+use crate::builtins::NixValueBuiltin;
 use crate::scope::Scope;
 
 #[derive(Clone)]
 pub enum NixLambdaParam {
     Ident(String),
     Pattern(ast::Pattern),
-}
-
-#[derive(Clone)]
-pub enum NixValueBuiltin {
-    Import,
 }
 
 #[derive(Clone, Default)]
@@ -55,6 +51,7 @@ impl fmt::Debug for NixValue {
             }
             NixValue::Bool(true) => f.write_str("true"),
             NixValue::Bool(false) => f.write_str("false"),
+            NixValue::Builtin(NixValueBuiltin::Abort) => f.write_str("abort"),
             NixValue::Builtin(NixValueBuiltin::Import) => f.write_str("import"),
             NixValue::Lambda(..) => f.write_str("<lamda>"),
             NixValue::List(list) => {
@@ -130,6 +127,7 @@ impl fmt::Display for NixValue {
             }
             NixValue::Bool(true) => f.write_str("true"),
             NixValue::Bool(false) => f.write_str("false"),
+            NixValue::Builtin(NixValueBuiltin::Abort) => f.write_str("abort"),
             NixValue::Builtin(NixValueBuiltin::Import) => f.write_str("import"),
             NixValue::Lambda(..) => f.write_str("<lamda>"),
             NixValue::List(list) => {
@@ -242,10 +240,13 @@ pub trait AsString {
 }
 
 impl AsString for NixValue {
+    // https://nix.dev/manual/nix/2.24/language/builtins.html?highlight=abort#builtins-toString
     fn as_string(&self) -> Option<String> {
         // TODO: AttrSet to String
         match self {
             NixValue::AttrSet(_) => None,
+            NixValue::Bool(false) => Some(String::from("")),
+            NixValue::Bool(true) => Some(String::from("1")),
             NixValue::Null => Some(String::from("")),
             NixValue::Path(path) => Some(path.display().to_string()),
             NixValue::String(str) => Some(str.clone()),
