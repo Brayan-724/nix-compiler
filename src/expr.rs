@@ -6,9 +6,7 @@ use rnix::ast::{self, AstToken, HasEntry};
 
 use crate::builtins::{self, NixValueBuiltin};
 use crate::scope::Scope;
-use crate::value::{
-    AsAttrSet, AsString, LazyNixValue, NixLambdaParam, NixValue, NixVar,
-};
+use crate::value::{AsAttrSet, AsString, LazyNixValue, NixLambdaParam, NixValue, NixVar};
 
 #[allow(unused_variables, reason = "todo")]
 impl Scope {
@@ -116,6 +114,10 @@ impl Scope {
             NixValue::Builtin(NixValueBuiltin::Abort) => {
                 let argument = self.visit_expr(node.argument().unwrap());
                 builtins::abort(argument)
+            }
+            NixValue::Builtin(NixValueBuiltin::CompareVersions(first_arg)) => {
+                let argument = self.visit_expr(node.argument().unwrap());
+                builtins::compare_versions(argument, first_arg.clone())
             }
             NixValue::Builtin(NixValueBuiltin::Import) => {
                 let argument = self.visit_expr(node.argument().unwrap());
@@ -254,8 +256,7 @@ impl Scope {
 
                     rhs
                 }
-
-            },
+            }
         }
     }
 
@@ -266,7 +267,9 @@ impl Scope {
     pub fn visit_hasattr(self: &Rc<Self>, node: ast::HasAttr) -> NixVar {
         let value = self.visit_expr(node.expr().unwrap());
 
-        let has_attr = self.resolve_attr_path(value, node.attrpath().unwrap().attrs()).is_some();
+        let has_attr = self
+            .resolve_attr_path(value, node.attrpath().unwrap().attrs())
+            .is_some();
 
         NixValue::Bool(has_attr).wrap_var()
     }
@@ -418,7 +421,7 @@ impl Scope {
                 };
 
                 NixValue::Bool(!value).wrap_var()
-            },
+            }
             ast::UnaryOpKind::Negate => todo!(),
         }
     }

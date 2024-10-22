@@ -52,10 +52,7 @@ impl Scope {
     pub fn new_with_builtins(file_scope: Rc<FileScope>) -> Rc<Self> {
         macro_rules! insert {
             ($ident:ident; $key:ident = $value:expr) => {
-                $ident.insert(
-                    stringify!($key).to_owned(),
-                    $value.wrap_var(),
-                )
+                $ident.insert(stringify!($key).to_owned(), $value.wrap_var())
             };
         }
 
@@ -65,8 +62,12 @@ impl Scope {
         insert!(globals; abort = NixValue::Builtin(NixValueBuiltin::Abort));
         insert!(builtins; abort = NixValue::Builtin(NixValueBuiltin::Abort));
 
+        insert!(builtins; compareVersions = NixValue::Builtin(NixValueBuiltin::CompareVersions(None)));
+
         insert!(globals; import = NixValue::Builtin(NixValueBuiltin::Import));
         insert!(builtins; import = NixValue::Builtin(NixValueBuiltin::Import));
+
+        insert!(builtins; nixVersion = NixValue::String(String::from("2.24.9")));
 
         insert!(globals; toString = NixValue::Builtin(NixValueBuiltin::ToString));
         insert!(builtins; toString = NixValue::Builtin(NixValueBuiltin::ToString));

@@ -9,8 +9,9 @@ use crate::value::{AsString, NixValue, NixVar};
 #[derive(Clone)]
 pub enum NixValueBuiltin {
     Abort,
+    CompareVersions(Option<String>),
     Import,
-    ToString
+    ToString,
 }
 
 pub fn abort(argument: NixVar) -> ! {
@@ -24,6 +25,42 @@ pub fn abort(argument: NixVar) -> ! {
     panic!("Aborting: {message}")
 }
 
+pub fn compare_versions(argument: NixVar, first_arg: Option<String>) -> NixVar {
+    let Some(first_arg) = first_arg else {
+        let argument = argument.resolve();
+        let argument = argument.borrow();
+
+        let Some(first_arg) = argument.as_string() else {
+            todo!("Error handling: {argument:#?}")
+        };
+
+        return NixValue::Builtin(NixValueBuiltin::CompareVersions(Some(first_arg))).wrap_var();
+    };
+
+    let argument = argument.resolve();
+    let argument = argument.borrow();
+
+    let Some(second_arg) = argument.as_string() else {
+        todo!("Error handling: {argument:#?}")
+    };
+
+    let first_arg = first_arg.split(".");
+    let second_arg = second_arg.split(".");
+
+    for (first, second) in first_arg.zip(second_arg) {
+        let first = first.parse::<u8>().unwrap();
+        let second = second.parse::<u8>().unwrap();
+
+        match first.cmp(&second) {
+            std::cmp::Ordering::Less => return NixValue::Int(-1).wrap_var(),
+            std::cmp::Ordering::Equal => {},
+            std::cmp::Ordering::Greater => return NixValue::Int(-1).wrap_var(),
+        }
+    }
+
+    return NixValue::Int(0).wrap_var()
+}
+
 pub fn import(argument: NixVar) -> NixVar {
     let argument = argument.resolve();
     let argument = argument.borrow();
@@ -31,9 +68,9 @@ pub fn import(argument: NixVar) -> NixVar {
     let path = match argument.deref() {
         NixValue::Path(path) => path.clone(),
         NixValue::AttrSet(set) => {
-            let is_flake = set
-                .get("_type")
-                .is_some_and(|ty| ty.resolve_map(|val| val.as_string() == Some("flake".to_owned())));
+            let is_flake = set.get("_type").is_some_and(|ty| {
+                ty.resolve_map(|val| val.as_string() == Some("flake".to_owned()))
+            });
 
             if !is_flake {
                 todo!("Cannot import attr set");
