@@ -187,7 +187,7 @@ impl Scope {
                 scope.visit_expr(expr.clone())
             }
 
-            _ => todo!("Error handling"),
+            a => todo!("Error handling: {a:#?}"),
         }
     }
 

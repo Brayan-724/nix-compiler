@@ -1,5 +1,6 @@
 pub mod builtins;
 mod expr;
+pub mod flake;
 mod scope;
 mod value;
 
@@ -25,29 +26,9 @@ fn main() {
     println!("Result (Minimized): {result:?}");
 
     if is_flake {
-        let result = result.resolve();
-        let result = result.borrow();
-
-        let Some(flake) = result.as_attr_set() else {
-            todo!("Error handling");
-        };
-
-        let outputs = flake.get("outputs").expect("Flake should export `outputs`");
-        let outputs = outputs.resolve();
-
-        println!("{outputs:#?}");
-
-        let outputs = outputs.borrow();
-        let Some((scope, param, expr)) = outputs.as_lambda() else {
-            todo!("outputs should be a lambda")
-        };
-
-        let scope = scope.clone().new_child();
-        let outputs = LazyNixValue::Pending(scope.clone(), expr.clone()).wrap_var();
-
-        scope.set_variable("self".to_owned(), outputs.clone());
+        let outputs = flake::resolve_flake(result);
 
         let outputs = outputs.resolve_set(true);
-        println!("{:#}", outputs.borrow());
+        println!("END: {:#}", outputs.borrow());
     }
 }

@@ -64,9 +64,7 @@ impl LazyNixValue {
             LazyNixValue::Pending(scope, expr) => {
                 let value = scope.visit_expr(expr);
 
-                let value = value
-                    .as_concrete()
-                    .unwrap_or_else(|| value.resolve());
+                let value = value.as_concrete().unwrap_or_else(|| value.resolve());
 
                 *this.borrow_mut().deref_mut() = LazyNixValue::Concrete(value.clone());
 
@@ -79,7 +77,9 @@ impl LazyNixValue {
 
                 value
             }
-            LazyNixValue::Resolving => unreachable!("Infinite recursion detected. Tried to get a value that is resolving"),
+            LazyNixValue::Resolving => {
+                unreachable!("Infinite recursion detected. Tried to get a value that is resolving")
+            }
         }
     }
 
