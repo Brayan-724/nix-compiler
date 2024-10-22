@@ -29,6 +29,7 @@ pub enum NixValueBuiltin {
 #[derive(Clone, Default)]
 pub enum NixValue {
     AttrSet(HashMap<String, NixVar>),
+    Bool(bool),
     Builtin(NixValueBuiltin),
     Lambda(Rc<Scope>, NixLambdaParam, ast::Expr),
     List(Vec<NixVar>),
@@ -52,6 +53,8 @@ impl fmt::Debug for NixValue {
 
                 map.finish()
             }
+            NixValue::Bool(true) => f.write_str("true"),
+            NixValue::Bool(false) => f.write_str("false"),
             NixValue::Builtin(NixValueBuiltin::Import) => f.write_str("import"),
             NixValue::Lambda(..) => f.write_str("<lamda>"),
             NixValue::List(list) => {
@@ -125,6 +128,8 @@ impl fmt::Display for NixValue {
 
                 f.write_char('}')
             }
+            NixValue::Bool(true) => f.write_str("true"),
+            NixValue::Bool(false) => f.write_str("false"),
             NixValue::Builtin(NixValueBuiltin::Import) => f.write_str("import"),
             NixValue::Lambda(..) => f.write_str("<lamda>"),
             NixValue::List(list) => {
@@ -208,6 +213,14 @@ impl NixValue {
         let old = set.insert(attr, value.clone());
 
         Some((value, old))
+    }
+
+    pub fn as_bool(&self) -> Option<bool> {
+        if let NixValue::Bool(value) = self {
+            Some(*value)
+        } else {
+            None
+        }
     }
 
     pub fn as_lambda(&self) -> Option<(Rc<Scope>, &NixLambdaParam, &ast::Expr)> {
