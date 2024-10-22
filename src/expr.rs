@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::iter::once;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -218,7 +219,26 @@ impl Scope {
     }
 
     pub fn visit_binop(self: &Rc<Self>, node: ast::BinOp) -> NixVar {
-        todo!()
+        let lhs = self.visit_expr(node.lhs().unwrap());
+        let rhs = self.visit_expr(node.rhs().unwrap());
+
+        match node.operator().unwrap() {
+            ast::BinOpKind::Concat => todo!(),
+            ast::BinOpKind::Update => todo!(),
+            ast::BinOpKind::Add => todo!(),
+            ast::BinOpKind::Sub => todo!(),
+            ast::BinOpKind::Mul => todo!(),
+            ast::BinOpKind::Div => todo!(),
+            ast::BinOpKind::And => todo!(),
+            ast::BinOpKind::Equal => todo!(),
+            ast::BinOpKind::Implication => todo!(),
+            ast::BinOpKind::Less => todo!(),
+            ast::BinOpKind::LessOrEq => todo!(),
+            ast::BinOpKind::More => todo!(),
+            ast::BinOpKind::MoreOrEq => todo!(),
+            ast::BinOpKind::NotEqual => todo!(),
+            ast::BinOpKind::Or => todo!(),
+        }
     }
 
     pub fn visit_error(self: &Rc<Self>, node: ast::Error) -> NixVar {
@@ -226,7 +246,11 @@ impl Scope {
     }
 
     pub fn visit_hasattr(self: &Rc<Self>, node: ast::HasAttr) -> NixVar {
-        todo!()
+        let value = self.visit_expr(node.expr().unwrap());
+
+        let has_attr = self.resolve_attr_path(value, node.attrpath().unwrap().attrs()).is_some();
+
+        NixValue::Bool(has_attr).wrap_var()
     }
 
     pub fn visit_ident(self: &Rc<Self>, node: ast::Ident) -> NixVar {
@@ -236,7 +260,17 @@ impl Scope {
     }
 
     pub fn visit_ifelse(self: &Rc<Self>, node: ast::IfElse) -> NixVar {
-        todo!()
+        let condition = self.visit_expr(node.condition().unwrap());
+        let condition = condition.resolve();
+        let Some(condition) = condition.borrow().as_bool() else {
+            todo!("Error handling")
+        };
+
+        if condition {
+            self.visit_expr(node.body().unwrap())
+        } else {
+            self.visit_expr(node.else_body().unwrap())
+        }
     }
 
     pub fn visit_lambda(self: &Rc<Self>, node: ast::Lambda) -> NixVar {
@@ -355,7 +389,12 @@ impl Scope {
     }
 
     pub fn visit_unaryop(self: &Rc<Self>, node: ast::UnaryOp) -> NixVar {
-        todo!()
+        let value = self.visit_expr(node.expr().unwrap());
+
+        match node.operator().unwrap() {
+            ast::UnaryOpKind::Invert => todo!(),
+            ast::UnaryOpKind::Negate => todo!(),
+        }
     }
 
     pub fn visit_with(self: &Rc<Self>, node: ast::With) -> NixVar {
