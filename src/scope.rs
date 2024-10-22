@@ -49,12 +49,22 @@ pub struct Scope {
 
 impl Scope {
     pub fn new_with_builtins(file_scope: Rc<FileScope>) -> Rc<Self> {
+        macro_rules! insert {
+            ($ident:ident; $key:ident = $value:expr) => {
+                $ident.insert(
+                    stringify!($key).to_owned(),
+                    $value.wrap_var(),
+                )
+            };
+        }
+
         let mut variables = HashMap::new();
 
-        variables.insert(
-            "import".to_owned(),
-            NixValue::Builtin(NixValueBuiltin::Import).wrap_var(),
-        );
+        insert!(variables; import = NixValue::Builtin(NixValueBuiltin::Import));
+
+        let builtins = HashMap::new();
+
+        insert!(variables; builtins = NixValue::AttrSet(builtins));
 
         let parent = Rc::new(Scope {
             file: file_scope.clone(),
