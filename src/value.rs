@@ -22,11 +22,14 @@ pub enum NixLambdaParam {
     Pattern(ast::Pattern),
 }
 
+/// https://nix.dev/manual/nix/2.24/language/types
 #[derive(Clone, Default)]
 pub enum NixValue {
     AttrSet(HashMap<String, NixVar>),
     Bool(bool),
+    /// https://nix.dev/manual/nix/2.24/language/builtins
     Builtin(NixValueBuiltin),
+    Int(i64),
     Lambda(Rc<Scope>, NixLambdaParam, ast::Expr),
     List(Vec<NixVar>),
     #[default]
@@ -55,6 +58,7 @@ impl fmt::Debug for NixValue {
             NixValue::Builtin(NixValueBuiltin::CompareVersions(_)) => f.write_str("compareVersions"),
             NixValue::Builtin(NixValueBuiltin::Import) => f.write_str("import"),
             NixValue::Builtin(NixValueBuiltin::ToString) => f.write_str("toString"),
+            NixValue::Int(val) => f.write_str(&val.to_string()),
             NixValue::Lambda(..) => f.write_str("<lamda>"),
             NixValue::List(list) => {
                 let mut debug_list = f.debug_list();
@@ -133,6 +137,7 @@ impl fmt::Display for NixValue {
             NixValue::Builtin(NixValueBuiltin::CompareVersions(_)) => f.write_str("compareVersions"),
             NixValue::Builtin(NixValueBuiltin::Import) => f.write_str("import"),
             NixValue::Builtin(NixValueBuiltin::ToString) => f.write_str("toString"),
+            NixValue::Int(val) => f.write_str(&val.to_string()),
             NixValue::Lambda(..) => f.write_str("<lamda>"),
             NixValue::List(list) => {
                 let width = f.width().unwrap_or_default();
