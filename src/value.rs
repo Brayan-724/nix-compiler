@@ -53,6 +53,7 @@ impl fmt::Debug for NixValue {
             NixValue::Bool(false) => f.write_str("false"),
             NixValue::Builtin(NixValueBuiltin::Abort) => f.write_str("abort"),
             NixValue::Builtin(NixValueBuiltin::Import) => f.write_str("import"),
+            NixValue::Builtin(NixValueBuiltin::ToString) => f.write_str("toString"),
             NixValue::Lambda(..) => f.write_str("<lamda>"),
             NixValue::List(list) => {
                 let mut debug_list = f.debug_list();
@@ -129,6 +130,7 @@ impl fmt::Display for NixValue {
             NixValue::Bool(false) => f.write_str("false"),
             NixValue::Builtin(NixValueBuiltin::Abort) => f.write_str("abort"),
             NixValue::Builtin(NixValueBuiltin::Import) => f.write_str("import"),
+            NixValue::Builtin(NixValueBuiltin::ToString) => f.write_str("toString"),
             NixValue::Lambda(..) => f.write_str("<lamda>"),
             NixValue::List(list) => {
                 let width = f.width().unwrap_or_default();

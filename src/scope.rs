@@ -5,7 +5,8 @@ use std::rc::Rc;
 
 use rnix::ast;
 
-use crate::value::{AsAttrSet, AsString, NixValue, NixValueBuiltin, NixVar};
+use crate::builtins::NixValueBuiltin;
+use crate::value::{AsAttrSet, AsString, NixValue, NixVar};
 
 #[derive(Debug)]
 pub struct FileScope {
@@ -61,11 +62,14 @@ impl Scope {
         let mut globals = HashMap::new();
         let mut builtins = HashMap::new();
 
+        insert!(globals; abort = NixValue::Builtin(NixValueBuiltin::Abort));
+        insert!(builtins; abort = NixValue::Builtin(NixValueBuiltin::Abort));
+
         insert!(globals; import = NixValue::Builtin(NixValueBuiltin::Import));
         insert!(builtins; import = NixValue::Builtin(NixValueBuiltin::Import));
 
-        insert!(globals; abort = NixValue::Builtin(NixValueBuiltin::Abort));
-        insert!(builtins; abort = NixValue::Builtin(NixValueBuiltin::Abort));
+        insert!(globals; toString = NixValue::Builtin(NixValueBuiltin::ToString));
+        insert!(builtins; toString = NixValue::Builtin(NixValueBuiltin::ToString));
 
         insert!(globals; builtins = NixValue::AttrSet(builtins));
 

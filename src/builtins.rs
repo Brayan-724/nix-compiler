@@ -10,6 +10,7 @@ use crate::value::{AsString, NixValue, NixVar};
 pub enum NixValueBuiltin {
     Abort,
     Import,
+    ToString
 }
 
 pub fn abort(argument: NixVar) -> ! {
@@ -66,4 +67,15 @@ pub fn import_path(path: impl AsRef<Path>) -> NixVar {
     } else {
         result
     }
+}
+
+pub fn to_string(argument: NixVar) -> NixVar {
+    let argument = argument.resolve();
+    let argument = argument.borrow();
+
+    let Some(message) = argument.as_string() else {
+        todo!("Error handling: {argument:#?}")
+    };
+
+    NixValue::String(message).wrap_var()
 }

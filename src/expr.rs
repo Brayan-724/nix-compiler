@@ -4,10 +4,10 @@ use std::rc::Rc;
 
 use rnix::ast::{self, AstToken, HasEntry};
 
-use crate::builtins;
+use crate::builtins::{self, NixValueBuiltin};
 use crate::scope::Scope;
 use crate::value::{
-    AsAttrSet, AsString, LazyNixValue, NixLambdaParam, NixValue, NixValueBuiltin, NixVar,
+    AsAttrSet, AsString, LazyNixValue, NixLambdaParam, NixValue, NixVar,
 };
 
 #[allow(unused_variables, reason = "todo")]
@@ -120,6 +120,10 @@ impl Scope {
             NixValue::Builtin(NixValueBuiltin::Import) => {
                 let argument = self.visit_expr(node.argument().unwrap());
                 builtins::import(argument)
+            }
+            NixValue::Builtin(NixValueBuiltin::ToString) => {
+                let argument = self.visit_expr(node.argument().unwrap());
+                builtins::to_string(argument)
             }
             NixValue::Lambda(scope, param, expr) => {
                 let scope = scope.clone().new_child();
