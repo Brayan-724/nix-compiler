@@ -1,8 +1,5 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::iter::once;
 use std::ops::Deref;
-use std::path::PathBuf;
 use std::rc::Rc;
 
 use rnix::ast::{self, AstToken, HasEntry};

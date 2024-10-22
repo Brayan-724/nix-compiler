@@ -5,10 +5,8 @@ mod scope;
 mod value;
 
 use std::env;
-use std::ops::Deref;
 
 use scope::FileScope;
-use value::{AsAttrSet, LazyNixValue};
 
 fn main() {
     let mut iter = env::args().skip(1).peekable();
