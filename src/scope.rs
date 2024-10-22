@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use rnix::ast;
 
-use crate::value::{AsAttrSet, AsString, NixValue, NixValueBuiltin, NixValueWrapped};
+use crate::value::{AsAttrSet, AsString, NixValue, NixValueBuiltin, NixVar};
 
 #[derive(Debug)]
 pub struct FileScope {
@@ -19,7 +19,7 @@ impl FileScope {
         })
     }
 
-    pub fn evaluate(self: Rc<Self>) -> Result<NixValueWrapped, ()> {
+    pub fn evaluate(self: Rc<Self>) -> Result<NixVar, ()> {
         let content = fs::read_to_string(&self.path).unwrap();
 
         let parse = rnix::Root::parse(&content);
@@ -43,7 +43,7 @@ impl FileScope {
 #[derive(Debug)]
 pub struct Scope {
     pub file: Rc<FileScope>,
-    pub variables: NixValueWrapped,
+    pub variables: NixVar,
     pub parent: Option<Rc<Scope>>,
 }
 
@@ -53,18 +53,18 @@ impl Scope {
 
         variables.insert(
             "import".to_owned(),
-            NixValue::Builtin(NixValueBuiltin::Import).wrap(),
+            NixValue::Builtin(NixValueBuiltin::Import).wrap_var(),
         );
 
         let parent = Rc::new(Scope {
             file: file_scope.clone(),
-            variables: NixValue::AttrSet(variables).wrap(),
+            variables: NixValue::AttrSet(variables).wrap_var(),
             parent: None,
         });
 
         Rc::new(Self {
             file: file_scope,
-            variables: NixValue::AttrSet(HashMap::new()).wrap(),
+            variables: NixValue::AttrSet(HashMap::new()).wrap_var(),
             parent: Some(parent),
         })
     }
@@ -72,12 +72,12 @@ impl Scope {
     pub fn new_child(self: Rc<Self>) -> Rc<Scope> {
         Rc::new(Scope {
             file: self.file.clone(),
-            variables: NixValue::AttrSet(HashMap::new()).wrap(),
+            variables: NixValue::AttrSet(HashMap::new()).wrap_var(),
             parent: Some(self),
         })
     }
 
-    pub fn new_child_from(self: Rc<Self>, variables: NixValueWrapped) -> Rc<Scope> {
+    pub fn new_child_from(self: Rc<Self>, variables: NixVar) -> Rc<Scope> {
         Rc::new(Scope {
             file: self.file.clone(),
             variables,
@@ -85,20 +85,20 @@ impl Scope {
         })
     }
 
-    pub fn set_variable(
-        self: &Rc<Self>,
-        varname: String,
-        value: NixValueWrapped,
-    ) -> Option<NixValueWrapped> {
+    pub fn set_variable(self: &Rc<Self>, varname: String, value: NixVar) -> Option<NixVar> {
         self.variables
+            .as_concrete()
+            .unwrap()
             .borrow_mut()
             .as_attr_set_mut()
             .unwrap()
             .insert(varname, value)
     }
 
-    pub fn get_variable(self: &Rc<Self>, varname: String) -> Option<NixValueWrapped> {
+    pub fn get_variable(self: &Rc<Self>, varname: String) -> Option<NixVar> {
         self.variables
+            .as_concrete()
+            .unwrap()
             .borrow()
             .as_attr_set()
             .unwrap()
@@ -113,9 +113,9 @@ impl Scope {
 
     pub fn resolve_attr_path<'a>(
         self: &Rc<Self>,
-        value: NixValueWrapped,
+        value: NixVar,
         attr_path: impl Iterator<Item = ast::Attr>,
-    ) -> Option<NixValueWrapped> {
+    ) -> Option<NixVar> {
         let mut attr_path: Vec<_> = attr_path.collect();
         let last_attr = attr_path.pop().unwrap();
 
@@ -123,6 +123,7 @@ impl Scope {
 
         let last_attr = self.resolve_attr(last_attr);
 
+        let attr_set = attr_set.resolve();
         let attr_set = attr_set.borrow();
 
         attr_set.get(&last_attr).unwrap()
@@ -130,26 +131,26 @@ impl Scope {
 
     pub fn resolve_attr_set_path<'a>(
         self: &Rc<Self>,
-        value: NixValueWrapped,
+        value: NixVar,
         mut attr_path: impl Iterator<Item = ast::Attr>,
-    ) -> NixValueWrapped {
+    ) -> NixVar {
         if let Some(attr) = attr_path.next() {
             let attr = self.resolve_attr(attr);
 
+            let value = value.resolve();
             let set_value = value.borrow().get(&attr).unwrap();
 
             let Some(set_value) = set_value else {
                 let (last, _) = value
                     .borrow_mut()
-                    .insert(attr, NixValue::AttrSet(HashMap::new()).wrap())
+                    .insert(attr, NixValue::AttrSet(HashMap::new()).wrap_var())
                     .unwrap();
 
                 return self.resolve_attr_set_path(last, attr_path);
             };
 
-            if !set_value.borrow().is_attr_set() {
-                let set_value = set_value.borrow();
-                todo!("Error handling for {set_value:#}")
+            if !set_value.resolve_and(AsAttrSet::is_attr_set) {
+                set_value.resolve_map(|set_value| todo!("Error handling for {set_value:#}"));
             };
 
             self.resolve_attr_set_path(set_value, attr_path)
@@ -163,8 +164,7 @@ impl Scope {
             ast::Attr::Ident(ident) => ident.ident_token().unwrap().text().to_owned(),
             ast::Attr::Dynamic(dynamic) => self
                 .visit_expr(dynamic.expr().unwrap())
-                .borrow()
-                .as_string()
+                .resolve_map(AsString::as_string)
                 .expect("Cannot cast as string"),
             ast::Attr::Str(_) => todo!(),
         }

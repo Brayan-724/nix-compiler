@@ -1,9 +1,15 @@
+mod lazy;
+mod var;
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{self, Write};
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::rc::Rc;
+
+pub use lazy::LazyNixValue;
+pub use var::NixVar;
 
 use rnix::ast;
 
@@ -22,10 +28,10 @@ pub enum NixValueBuiltin {
 
 #[derive(Clone, Default)]
 pub enum NixValue {
-    AttrSet(HashMap<String, NixValueWrapped>),
+    AttrSet(HashMap<String, NixVar>),
     Builtin(NixValueBuiltin),
     Lambda(Rc<Scope>, NixLambdaParam, ast::Expr),
-    List(Vec<NixValueWrapped>),
+    List(Vec<NixVar>),
     #[default]
     Null,
     Path(PathBuf),
@@ -40,11 +46,8 @@ impl fmt::Debug for NixValue {
             NixValue::AttrSet(set) => {
                 let mut map = f.debug_map();
 
-                for (a, b) in set {
-                    let b = b.as_ref().borrow();
-                    let b = b.deref();
-
-                    map.entry(a, b);
+                for (key, value) in set {
+                    map.entry(key, value);
                 }
 
                 map.finish()
@@ -55,7 +58,7 @@ impl fmt::Debug for NixValue {
                 let mut debug_list = f.debug_list();
 
                 for item in list {
-                    debug_list.entry(item.borrow().deref());
+                    debug_list.entry(item);
                 }
 
                 debug_list.finish()
@@ -88,6 +91,7 @@ impl fmt::Display for NixValue {
                 }
 
                 for (key, value) in set {
+                    let value = value.resolve();
                     let value = value.as_ref().borrow();
                     let value = value.deref();
 
@@ -137,6 +141,7 @@ impl fmt::Display for NixValue {
                 }
 
                 for value in list {
+                    let value = value.resolve();
                     let value = value.as_ref().borrow();
                     let value = value.deref();
 
@@ -181,7 +186,11 @@ impl NixValue {
         Rc::new(RefCell::new(self))
     }
 
-    pub fn get(&self, attr: &String) -> Result<Option<NixValueWrapped>, ()> {
+    pub fn wrap_var(self) -> NixVar {
+        NixVar(Rc::new(RefCell::new(LazyNixValue::Concrete(self.wrap()))))
+    }
+
+    pub fn get(&self, attr: &String) -> Result<Option<NixVar>, ()> {
         let NixValue::AttrSet(set) = self else {
             todo!("Error handling");
         };
@@ -190,11 +199,7 @@ impl NixValue {
     }
 
     /// Returns (new_value, old_value)
-    pub fn insert(
-        &mut self,
-        attr: String,
-        value: NixValueWrapped,
-    ) -> Option<(NixValueWrapped, Option<NixValueWrapped>)> {
+    pub fn insert(&mut self, attr: String, value: NixVar) -> Option<(NixVar, Option<NixVar>)> {
         let NixValue::AttrSet(set) = self else {
             todo!("Error handling");
             // return Err(());
@@ -205,7 +210,7 @@ impl NixValue {
         Some((value, old))
     }
 
-    pub fn as_lamda(&self) -> Option<(Rc<Scope>, &NixLambdaParam, &ast::Expr)> {
+    pub fn as_lambda(&self) -> Option<(Rc<Scope>, &NixLambdaParam, &ast::Expr)> {
         if let NixValue::Lambda(scope, param, expr) = self {
             Some((scope.clone(), param, expr))
         } else {
@@ -237,8 +242,8 @@ impl AsString for NixValue {
 }
 
 pub trait AsAttrSet {
-    fn as_attr_set(&self) -> Option<&HashMap<String, NixValueWrapped>>;
-    fn as_attr_set_mut(&mut self) -> Option<&mut HashMap<String, NixValueWrapped>>;
+    fn as_attr_set(&self) -> Option<&HashMap<String, NixVar>>;
+    fn as_attr_set_mut(&mut self) -> Option<&mut HashMap<String, NixVar>>;
 
     fn is_attr_set(&self) -> bool {
         self.as_attr_set().is_some()
@@ -246,7 +251,7 @@ pub trait AsAttrSet {
 }
 
 impl AsAttrSet for NixValue {
-    fn as_attr_set(&self) -> Option<&HashMap<String, NixValueWrapped>> {
+    fn as_attr_set(&self) -> Option<&HashMap<String, NixVar>> {
         if let NixValue::AttrSet(set) = self {
             Some(set)
         } else {
@@ -254,7 +259,7 @@ impl AsAttrSet for NixValue {
         }
     }
 
-    fn as_attr_set_mut(&mut self) -> Option<&mut HashMap<String, NixValueWrapped>> {
+    fn as_attr_set_mut(&mut self) -> Option<&mut HashMap<String, NixVar>> {
         if let NixValue::AttrSet(set) = self {
             Some(set)
         } else {
