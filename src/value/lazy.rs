@@ -79,7 +79,7 @@ impl LazyNixValue {
 
                 value
             }
-            LazyNixValue::Resolving => unreachable!(),
+            LazyNixValue::Resolving => unreachable!("Infinite recursion detected. Tried to get a value that is resolving"),
         }
     }
 
