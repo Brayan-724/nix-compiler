@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::flake::resolve_flake;
 use crate::scope::FileScope;
-use crate::value::{AsString, NixValue, NixVar};
+use crate::value::{AsString, NixValue, NixValueWrapped};
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum NixValueBuiltin {
@@ -14,8 +14,7 @@ pub enum NixValueBuiltin {
     ToString,
 }
 
-pub fn abort(argument: NixVar) -> ! {
-    let argument = argument.resolve();
+pub fn abort(argument: NixValueWrapped) -> ! {
     let argument = argument.borrow();
 
     let Some(message) = argument.as_string() else {
@@ -25,19 +24,17 @@ pub fn abort(argument: NixVar) -> ! {
     panic!("Aborting: {message}")
 }
 
-pub fn compare_versions(argument: NixVar, first_arg: Option<String>) -> NixVar {
+pub fn compare_versions(argument: NixValueWrapped, first_arg: Option<String>) -> NixValueWrapped {
     let Some(first_arg) = first_arg else {
-        let argument = argument.resolve();
         let argument = argument.borrow();
 
         let Some(first_arg) = argument.as_string() else {
             todo!("Error handling: {argument:#?}")
         };
 
-        return NixValue::Builtin(NixValueBuiltin::CompareVersions(Some(first_arg))).wrap_var();
+        return NixValue::Builtin(NixValueBuiltin::CompareVersions(Some(first_arg))).wrap();
     };
 
-    let argument = argument.resolve();
     let argument = argument.borrow();
 
     let Some(second_arg) = argument.as_string() else {
@@ -52,17 +49,16 @@ pub fn compare_versions(argument: NixVar, first_arg: Option<String>) -> NixVar {
         let second = second.parse::<u8>().unwrap();
 
         match first.cmp(&second) {
-            std::cmp::Ordering::Less => return NixValue::Int(-1).wrap_var(),
-            std::cmp::Ordering::Equal => {},
-            std::cmp::Ordering::Greater => return NixValue::Int(-1).wrap_var(),
+            std::cmp::Ordering::Less => return NixValue::Int(-1).wrap(),
+            std::cmp::Ordering::Equal => {}
+            std::cmp::Ordering::Greater => return NixValue::Int(-1).wrap(),
         }
     }
 
-    return NixValue::Int(0).wrap_var()
+    NixValue::Int(0).wrap()
 }
 
-pub fn import(argument: NixVar) -> NixVar {
-    let argument = argument.resolve();
+pub fn import(argument: NixValueWrapped) -> NixValueWrapped {
     let argument = argument.borrow();
 
     let path = match argument.deref() {
@@ -92,7 +88,7 @@ pub fn import(argument: NixVar) -> NixVar {
     import_path(path)
 }
 
-pub fn import_path(path: impl AsRef<Path>) -> NixVar {
+pub fn import_path(path: impl AsRef<Path>) -> NixValueWrapped {
     let path = path.as_ref();
 
     println!("Importing {path:#?}");
@@ -106,13 +102,12 @@ pub fn import_path(path: impl AsRef<Path>) -> NixVar {
     }
 }
 
-pub fn to_string(argument: NixVar) -> NixVar {
-    let argument = argument.resolve();
+pub fn to_string(argument: NixValueWrapped) -> NixValueWrapped {
     let argument = argument.borrow();
 
     let Some(message) = argument.as_string() else {
         todo!("Error handling: {argument:#?}")
     };
 
-    NixValue::String(message).wrap_var()
+    NixValue::String(message).wrap()
 }

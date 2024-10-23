@@ -7,6 +7,7 @@ mod value;
 use std::env;
 
 use scope::FileScope;
+use value::LazyNixValue;
 
 fn main() {
     let mut iter = env::args().skip(1).peekable();
@@ -20,13 +21,15 @@ fn main() {
 
     let result = FileScope::from_path(file).evaluate().unwrap();
 
-    println!("Result (Expanded): {result:#?}");
-    println!("Result (Minimized): {result:?}");
-
     if is_flake {
         let outputs = flake::resolve_flake(result);
 
-        let outputs = outputs.resolve_set(true);
-        println!("END: {:#}", outputs.borrow());
+        let outputs = LazyNixValue::Concrete(outputs).wrap_var().resolve_set(true);
+
+        println!("Result (Expanded): {:#}", outputs.borrow());
+        println!("Result (Minimized): {}", outputs.borrow());
+    } else {
+        println!("Result (Expanded): {:#}", result.borrow());
+        println!("Result (Minimized): {}", result.borrow());
     }
 }

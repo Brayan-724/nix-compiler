@@ -6,7 +6,7 @@ use std::rc::Rc;
 use rnix::ast;
 
 use crate::builtins::NixValueBuiltin;
-use crate::value::{AsAttrSet, AsString, NixValue, NixVar};
+use crate::value::{AsAttrSet, AsString, NixValue, NixValueWrapped, NixVar};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileScope {
@@ -20,7 +20,7 @@ impl FileScope {
         })
     }
 
-    pub fn evaluate(self: Rc<Self>) -> Result<NixVar, ()> {
+    pub fn evaluate(self: Rc<Self>) -> Result<NixValueWrapped, ()> {
         let content = fs::read_to_string(&self.path).unwrap();
 
         let parse = rnix::Root::parse(&content);
@@ -44,7 +44,7 @@ impl FileScope {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Scope {
     pub file: Rc<FileScope>,
-    pub variables: NixVar,
+    pub variables: NixValueWrapped,
     pub parent: Option<Rc<Scope>>,
 }
 
@@ -76,13 +76,13 @@ impl Scope {
 
         let parent = Rc::new(Scope {
             file: file_scope.clone(),
-            variables: NixValue::AttrSet(globals).wrap_var(),
+            variables: NixValue::AttrSet(globals).wrap(),
             parent: None,
         });
 
         Rc::new(Self {
             file: file_scope,
-            variables: NixValue::AttrSet(HashMap::new()).wrap_var(),
+            variables: NixValue::AttrSet(HashMap::new()).wrap(),
             parent: Some(parent),
         })
     }
@@ -90,12 +90,12 @@ impl Scope {
     pub fn new_child(self: Rc<Self>) -> Rc<Scope> {
         Rc::new(Scope {
             file: self.file.clone(),
-            variables: NixValue::AttrSet(HashMap::new()).wrap_var(),
+            variables: NixValue::AttrSet(HashMap::new()).wrap(),
             parent: Some(self),
         })
     }
 
-    pub fn new_child_from(self: Rc<Self>, variables: NixVar) -> Rc<Scope> {
+    pub fn new_child_from(self: Rc<Self>, variables: NixValueWrapped) -> Rc<Scope> {
         Rc::new(Scope {
             file: self.file.clone(),
             variables,
@@ -105,8 +105,6 @@ impl Scope {
 
     pub fn set_variable(self: &Rc<Self>, varname: String, value: NixVar) -> Option<NixVar> {
         self.variables
-            .as_concrete()
-            .unwrap()
             .borrow_mut()
             .as_attr_set_mut()
             .unwrap()
@@ -115,8 +113,6 @@ impl Scope {
 
     pub fn get_variable(self: &Rc<Self>, varname: String) -> Option<NixVar> {
         self.variables
-            .as_concrete()
-            .unwrap()
             .borrow()
             .as_attr_set()
             .unwrap()
@@ -131,7 +127,7 @@ impl Scope {
 
     pub fn resolve_attr_path<'a>(
         self: &Rc<Self>,
-        value: NixVar,
+        value: NixValueWrapped,
         attr_path: impl Iterator<Item = ast::Attr>,
     ) -> Option<NixVar> {
         let mut attr_path: Vec<_> = attr_path.collect();
@@ -141,7 +137,6 @@ impl Scope {
 
         let last_attr = self.resolve_attr(last_attr);
 
-        let attr_set = attr_set.resolve();
         let attr_set = attr_set.borrow();
 
         attr_set.get(&last_attr).unwrap().or_else(|| {
@@ -152,13 +147,12 @@ impl Scope {
 
     pub fn resolve_attr_set_path<'a>(
         self: &Rc<Self>,
-        value: NixVar,
+        value: NixValueWrapped,
         mut attr_path: impl Iterator<Item = ast::Attr>,
-    ) -> NixVar {
+    ) -> NixValueWrapped {
         if let Some(attr) = attr_path.next() {
             let attr = self.resolve_attr(attr);
 
-            let value = value.resolve();
             let set_value = value.borrow().get(&attr).unwrap();
 
             let Some(set_value) = set_value else {
@@ -167,14 +161,14 @@ impl Scope {
                     .insert(attr, NixValue::AttrSet(HashMap::new()).wrap_var())
                     .unwrap();
 
-                return self.resolve_attr_set_path(last, attr_path);
+                return self.resolve_attr_set_path(last.resolve(), attr_path);
             };
 
             if !set_value.resolve_and(AsAttrSet::is_attr_set) {
                 set_value.resolve_map(|set_value| todo!("Error handling for {set_value:#}"));
             };
 
-            self.resolve_attr_set_path(set_value, attr_path)
+            self.resolve_attr_set_path(set_value.resolve(), attr_path)
         } else {
             value
         }
@@ -185,7 +179,8 @@ impl Scope {
             ast::Attr::Ident(ident) => ident.ident_token().unwrap().text().to_owned(),
             ast::Attr::Dynamic(dynamic) => self
                 .visit_expr(dynamic.expr().unwrap())
-                .resolve_map(AsString::as_string)
+                .borrow()
+                .as_string()
                 .expect("Cannot cast as string"),
             ast::Attr::Str(_) => todo!(),
         }

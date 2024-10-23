@@ -13,7 +13,6 @@ use super::{AsAttrSet, NixValueWrapped, NixVar};
 pub enum LazyNixValue {
     Concrete(NixValueWrapped),
     Pending(Rc<Scope>, ast::Expr),
-    Resolved(NixVar),
     Resolving,
 }
 
@@ -22,7 +21,6 @@ impl fmt::Debug for LazyNixValue {
         match self {
             LazyNixValue::Concrete(value) => fmt::Debug::fmt(value.borrow().deref(), f),
             LazyNixValue::Pending(..) => f.write_str("<not-resolved>"),
-            LazyNixValue::Resolved(value) => fmt::Debug::fmt(value, f),
             LazyNixValue::Resolving => f.write_str("<resolving>"),
         }
     }
@@ -33,7 +31,6 @@ impl fmt::Display for LazyNixValue {
         match self {
             LazyNixValue::Concrete(value) => fmt::Display::fmt(value.borrow().deref(), f),
             LazyNixValue::Pending(..) => f.write_str("<not-resolved>"),
-            LazyNixValue::Resolved(value) => fmt::Display::fmt(value, f),
             LazyNixValue::Resolving => f.write_str("<resolving>"),
         }
     }
@@ -63,15 +60,6 @@ impl LazyNixValue {
             LazyNixValue::Concrete(_) => unreachable!(),
             LazyNixValue::Pending(scope, expr) => {
                 let value = scope.visit_expr(expr);
-
-                let value = value.as_concrete().unwrap_or_else(|| value.resolve());
-
-                *this.borrow_mut().deref_mut() = LazyNixValue::Concrete(value.clone());
-
-                value
-            }
-            LazyNixValue::Resolved(var) => {
-                let value = var.resolve();
 
                 *this.borrow_mut().deref_mut() = LazyNixValue::Concrete(value.clone());
 

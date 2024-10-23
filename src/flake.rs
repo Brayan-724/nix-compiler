@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 
 use crate::builtins;
-use crate::value::{AsAttrSet, LazyNixValue, NixValue, NixVar};
+use crate::value::{AsAttrSet, LazyNixValue, NixValue, NixValueWrapped};
 
-pub fn resolve_flake(result: NixVar) -> NixVar {
-    let result = result.resolve();
+pub fn resolve_flake(result: NixValueWrapped) -> NixValueWrapped {
     let result = result.borrow();
 
     let Some(flake) = result.as_attr_set() else {
@@ -54,7 +53,10 @@ pub fn resolve_flake(result: NixVar) -> NixVar {
         );
         out.insert("outPath".to_owned(), NixValue::Path(path).wrap_var());
 
-        out.insert("outputs".to_owned(), flake);
+        out.insert(
+            "outputs".to_owned(),
+            LazyNixValue::Concrete(flake).wrap_var(),
+        );
 
         (key.clone(), NixValue::AttrSet(out).wrap_var())
     });
@@ -77,5 +79,5 @@ pub fn resolve_flake(result: NixVar) -> NixVar {
 
     scope.set_variable("self".to_owned(), outputs.clone());
 
-    outputs
+    outputs.resolve()
 }

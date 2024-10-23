@@ -6,13 +6,13 @@ use rnix::ast::{self, AstToken, HasEntry};
 
 use crate::builtins::{self, NixValueBuiltin};
 use crate::scope::Scope;
-use crate::value::{AsAttrSet, AsString, LazyNixValue, NixLambdaParam, NixValue, NixVar};
+use crate::value::{AsAttrSet, AsString, LazyNixValue, NixLambdaParam, NixValue, NixValueWrapped};
 
 #[allow(unused_variables, reason = "todo")]
 impl Scope {
     fn insert_to_attrset(
         self: &Rc<Self>,
-        out: NixVar,
+        out: NixValueWrapped,
         attrpath: ast::Attrpath,
         attr_value: ast::Expr,
     ) {
@@ -23,21 +23,20 @@ impl Scope {
 
         let target = self.resolve_attr_set_path(out.clone(), attr_path.into_iter());
 
-        if !target.resolve_and(AsAttrSet::is_attr_set) {
+        if !target.borrow().is_attr_set() {
             todo!("Error handling")
         };
 
         let attr = self.resolve_attr(last_attr_path);
         let child = LazyNixValue::Pending(self.clone().new_child(), attr_value).wrap_var();
 
-        let target = target.resolve();
         let mut target = target.borrow_mut();
         let set = target.as_attr_set_mut().unwrap();
 
         set.insert(attr, child);
     }
 
-    fn insert_entry_to_attrset(self: &Rc<Self>, out: NixVar, entry: ast::Entry) {
+    fn insert_entry_to_attrset(self: &Rc<Self>, out: NixValueWrapped, entry: ast::Entry) {
         match entry {
             ast::Entry::Inherit(entry) => {
                 let mut from = entry
@@ -48,8 +47,7 @@ impl Scope {
                     let attr = self.resolve_attr(attr);
 
                     if let Some(from) = from.as_mut() {
-                        let value = from.resolve();
-                        let value = value
+                        let from = from
                             .borrow()
                             .as_attr_set()
                             .unwrap()
@@ -57,15 +55,13 @@ impl Scope {
                             .cloned()
                             .unwrap();
 
-                        let out = out.resolve();
                         out.borrow_mut()
                             .as_attr_set_mut()
                             .unwrap()
-                            .insert(attr, value);
+                            .insert(attr, from);
                     } else {
                         let value = self.get_variable(attr.clone()).unwrap();
 
-                        let out = out.resolve();
                         out.borrow_mut()
                             .as_attr_set_mut()
                             .unwrap()
@@ -79,7 +75,7 @@ impl Scope {
         }
     }
 
-    pub fn visit_expr(self: &Rc<Self>, node: ast::Expr) -> NixVar {
+    pub fn visit_expr(self: &Rc<Self>, node: ast::Expr) -> NixValueWrapped {
         match node {
             ast::Expr::Apply(node) => self.visit_apply(node),
             ast::Expr::Assert(node) => self.visit_assert(node),
@@ -104,10 +100,9 @@ impl Scope {
         }
     }
 
-    pub fn visit_apply(self: &Rc<Self>, node: ast::Apply) -> NixVar {
+    pub fn visit_apply(self: &Rc<Self>, node: ast::Apply) -> NixValueWrapped {
         let lambda = self.visit_expr(node.lambda().unwrap());
 
-        let lambda = lambda.resolve();
         let lambda = lambda.borrow();
 
         match lambda.deref() {
@@ -134,8 +129,7 @@ impl Scope {
 
                 match param {
                     NixLambdaParam::Pattern(pattern) => {
-                        let argument = argument_var.resolve();
-                        let argument = argument.borrow();
+                        let argument = argument_var.borrow();
                         let Some(argument) = argument.as_attr_set() else {
                             todo!("Error handling")
                         };
@@ -150,7 +144,10 @@ impl Scope {
                                 .to_owned();
 
                             // TODO: Should set only the unused keys instead of the argument
-                            scope.set_variable(varname, argument_var.clone());
+                            scope.set_variable(
+                                varname,
+                                LazyNixValue::Concrete(argument_var.clone()).wrap_var(),
+                            );
                         }
 
                         let has_ellipsis = pattern.ellipsis_token().is_some();
@@ -168,11 +165,11 @@ impl Scope {
                                 );
                             }
 
-                            let Some(value) = argument
-                                .get(varname)
-                                .cloned()
-                                .or_else(|| entry.default().map(|expr| scope.visit_expr(expr)))
-                            else {
+                            let Some(value) = argument.get(varname).cloned().or_else(|| {
+                                entry.default().map(|expr| {
+                                    LazyNixValue::Concrete(scope.visit_expr(expr)).wrap_var()
+                                })
+                            }) else {
                                 todo!("Require {varname}");
                             };
 
@@ -187,7 +184,12 @@ impl Scope {
                     }
                     NixLambdaParam::Ident(param) => {
                         assert!(
-                            scope.set_variable(param.clone(), argument_var).is_none(),
+                            scope
+                                .set_variable(
+                                    param.clone(),
+                                    LazyNixValue::Concrete(argument_var).wrap_var()
+                                )
+                                .is_none(),
                             "Variable {param} already exists"
                         );
                     }
@@ -200,11 +202,11 @@ impl Scope {
         }
     }
 
-    pub fn visit_assert(self: &Rc<Self>, node: ast::Assert) -> NixVar {
+    pub fn visit_assert(self: &Rc<Self>, node: ast::Assert) -> NixValueWrapped {
         todo!()
     }
 
-    pub fn visit_attrset(self: &Rc<Self>, node: ast::AttrSet) -> NixVar {
+    pub fn visit_attrset(self: &Rc<Self>, node: ast::AttrSet) -> NixValueWrapped {
         let is_recursive = node.rec_token().is_some();
 
         if is_recursive {
@@ -216,7 +218,7 @@ impl Scope {
 
             scope.variables.clone()
         } else {
-            let out = NixValue::AttrSet(HashMap::new()).wrap_var();
+            let out = NixValue::AttrSet(HashMap::new()).wrap();
 
             for entry in node.entries() {
                 self.insert_entry_to_attrset(out.clone(), entry);
@@ -226,7 +228,7 @@ impl Scope {
         }
     }
 
-    pub fn visit_binop(self: &Rc<Self>, node: ast::BinOp) -> NixVar {
+    pub fn visit_binop(self: &Rc<Self>, node: ast::BinOp) -> NixValueWrapped {
         let lhs = self.visit_expr(node.lhs().unwrap());
 
         match node.operator().unwrap() {
@@ -238,32 +240,26 @@ impl Scope {
             ast::BinOpKind::Div => todo!(),
             ast::BinOpKind::And => todo!(),
             ast::BinOpKind::Equal => {
-                let lhs = lhs.resolve();
-
                 let rhs = self.visit_expr(node.rhs().unwrap());
-                let rhs = rhs.resolve();
 
                 let are_equal = lhs.borrow().deref() == rhs.borrow().deref();
 
-                NixValue::Bool(are_equal).wrap_var()
-            },
+                NixValue::Bool(are_equal).wrap()
+            }
             ast::BinOpKind::Implication => todo!(),
             ast::BinOpKind::Less => todo!(),
             ast::BinOpKind::LessOrEq => todo!(),
             ast::BinOpKind::More => todo!(),
             ast::BinOpKind::MoreOrEq => todo!(),
             ast::BinOpKind::NotEqual => {
-                let lhs = lhs.resolve();
-
                 let rhs = self.visit_expr(node.rhs().unwrap());
-                let rhs = rhs.resolve();
 
                 let are_not_equal = lhs.borrow().deref() != rhs.borrow().deref();
 
-                NixValue::Bool(are_not_equal).wrap_var()
-            },
+                NixValue::Bool(are_not_equal).wrap()
+            }
             ast::BinOpKind::Or => {
-                let Some(lhs_value) = lhs.resolve().borrow().as_bool() else {
+                let Some(lhs_value) = lhs.borrow().as_bool() else {
                     todo!("Error handling");
                 };
 
@@ -278,29 +274,29 @@ impl Scope {
         }
     }
 
-    pub fn visit_error(self: &Rc<Self>, node: ast::Error) -> NixVar {
+    pub fn visit_error(self: &Rc<Self>, node: ast::Error) -> NixValueWrapped {
         todo!()
     }
 
-    pub fn visit_hasattr(self: &Rc<Self>, node: ast::HasAttr) -> NixVar {
+    pub fn visit_hasattr(self: &Rc<Self>, node: ast::HasAttr) -> NixValueWrapped {
         let value = self.visit_expr(node.expr().unwrap());
 
         let has_attr = self
             .resolve_attr_path(value, node.attrpath().unwrap().attrs())
             .is_some();
 
-        NixValue::Bool(has_attr).wrap_var()
+        NixValue::Bool(has_attr).wrap()
     }
 
-    pub fn visit_ident(self: &Rc<Self>, node: ast::Ident) -> NixVar {
+    pub fn visit_ident(self: &Rc<Self>, node: ast::Ident) -> NixValueWrapped {
         let varname = node.ident_token().unwrap().text().to_string();
         self.get_variable(varname.clone())
             .expect(&format!("Variable \"{varname}\" doesn't exists"))
+            .resolve()
     }
 
-    pub fn visit_ifelse(self: &Rc<Self>, node: ast::IfElse) -> NixVar {
+    pub fn visit_ifelse(self: &Rc<Self>, node: ast::IfElse) -> NixValueWrapped {
         let condition = self.visit_expr(node.condition().unwrap());
-        let condition = condition.resolve();
         let Some(condition) = condition.borrow().as_bool() else {
             todo!("Error handling")
         };
@@ -312,7 +308,7 @@ impl Scope {
         }
     }
 
-    pub fn visit_lambda(self: &Rc<Self>, node: ast::Lambda) -> NixVar {
+    pub fn visit_lambda(self: &Rc<Self>, node: ast::Lambda) -> NixValueWrapped {
         let param = match node.param().unwrap() {
             ast::Param::Pattern(pattern) => NixLambdaParam::Pattern(pattern),
             ast::Param::IdentParam(ident) => NixLambdaParam::Ident(
@@ -326,14 +322,14 @@ impl Scope {
             ),
         };
 
-        NixValue::Lambda(self.clone().new_child(), param, node.body().unwrap()).wrap_var()
+        NixValue::Lambda(self.clone().new_child(), param, node.body().unwrap()).wrap()
     }
 
-    pub fn visit_legacylet(self: &Rc<Self>, node: ast::LegacyLet) -> NixVar {
+    pub fn visit_legacylet(self: &Rc<Self>, node: ast::LegacyLet) -> NixValueWrapped {
         todo!()
     }
 
-    pub fn visit_letin(self: &Rc<Self>, node: ast::LetIn) -> NixVar {
+    pub fn visit_letin(self: &Rc<Self>, node: ast::LetIn) -> NixValueWrapped {
         for entry in node.entries() {
             self.insert_entry_to_attrset(self.variables.clone(), entry);
         }
@@ -343,23 +339,28 @@ impl Scope {
         self.visit_expr(body)
     }
 
-    pub fn visit_list(self: &Rc<Self>, node: ast::List) -> NixVar {
-        NixValue::List(node.items().map(|expr| self.visit_expr(expr)).collect()).wrap_var()
+    pub fn visit_list(self: &Rc<Self>, node: ast::List) -> NixValueWrapped {
+        NixValue::List(
+            node.items()
+                .map(|expr| LazyNixValue::Pending(self.clone(), expr).wrap_var())
+                .collect(),
+        )
+        .wrap()
     }
 
-    pub fn visit_literal(self: &Rc<Self>, node: ast::Literal) -> NixVar {
+    pub fn visit_literal(self: &Rc<Self>, node: ast::Literal) -> NixValueWrapped {
         match node.kind() {
             ast::LiteralKind::Float(_) => todo!(),
-            ast::LiteralKind::Integer(value) => NixValue::Int(value.value().unwrap()).wrap_var(),
+            ast::LiteralKind::Integer(value) => NixValue::Int(value.value().unwrap()).wrap(),
             ast::LiteralKind::Uri(_) => todo!(),
         }
     }
 
-    pub fn visit_paren(self: &Rc<Self>, node: ast::Paren) -> NixVar {
+    pub fn visit_paren(self: &Rc<Self>, node: ast::Paren) -> NixValueWrapped {
         self.visit_expr(node.expr().unwrap())
     }
 
-    pub fn visit_path(self: &Rc<Self>, node: ast::Path) -> NixVar {
+    pub fn visit_path(self: &Rc<Self>, node: ast::Path) -> NixValueWrapped {
         let mut path = String::new();
 
         for (idx, part) in node.parts().enumerate() {
@@ -386,7 +387,8 @@ impl Scope {
                 ast::InterpolPart::Interpolation(interpol) => {
                     let str = self
                         .visit_expr(interpol.expr().unwrap())
-                        .resolve_map(AsString::as_string)
+                        .borrow()
+                        .as_string()
                         .unwrap();
 
                     if idx == 1 && path.get(0..1) == Some("/") && str.get(0..1) == Some("/") {
@@ -398,20 +400,21 @@ impl Scope {
             }
         }
 
-        NixValue::Path(path.try_into().expect("TODO: Error handling")).wrap_var()
+        NixValue::Path(path.try_into().expect("TODO: Error handling")).wrap()
     }
 
-    pub fn visit_root(self: &Rc<Self>, node: ast::Root) -> NixVar {
+    pub fn visit_root(self: &Rc<Self>, node: ast::Root) -> NixValueWrapped {
         self.visit_expr(node.expr().unwrap())
     }
 
-    pub fn visit_select(self: &Rc<Self>, node: ast::Select) -> NixVar {
+    pub fn visit_select(self: &Rc<Self>, node: ast::Select) -> NixValueWrapped {
         let var = self.visit_expr(node.expr().unwrap());
         self.resolve_attr_path(var, node.attrpath().unwrap().attrs())
             .expect("Variable not found")
+            .resolve()
     }
 
-    pub fn visit_str(self: &Rc<Self>, node: ast::Str) -> NixVar {
+    pub fn visit_str(self: &Rc<Self>, node: ast::Str) -> NixValueWrapped {
         let mut content = String::new();
 
         for part in node.parts() {
@@ -422,18 +425,18 @@ impl Scope {
                 ast::InterpolPart::Interpolation(interpol) => {
                     content += &self
                         .visit_expr(interpol.expr().unwrap())
-                        .resolve_map(AsString::as_string)
+                        .borrow()
+                        .as_string()
                         .unwrap();
                 }
             }
         }
 
-        NixValue::String(content).wrap_var()
+        NixValue::String(content).wrap()
     }
 
-    pub fn visit_unaryop(self: &Rc<Self>, node: ast::UnaryOp) -> NixVar {
+    pub fn visit_unaryop(self: &Rc<Self>, node: ast::UnaryOp) -> NixValueWrapped {
         let value = self.visit_expr(node.expr().unwrap());
-        let value = value.resolve();
         let value = value.borrow();
 
         match node.operator().unwrap() {
@@ -442,16 +445,16 @@ impl Scope {
                     todo!("Error handling");
                 };
 
-                NixValue::Bool(!value).wrap_var()
+                NixValue::Bool(!value).wrap()
             }
             ast::UnaryOpKind::Negate => todo!(),
         }
     }
 
-    pub fn visit_with(self: &Rc<Self>, node: ast::With) -> NixVar {
+    pub fn visit_with(self: &Rc<Self>, node: ast::With) -> NixValueWrapped {
         let namespace = self.visit_expr(node.namespace().unwrap());
 
-        if !namespace.resolve_map(AsAttrSet::is_attr_set) {
+        if !namespace.borrow().is_attr_set() {
             todo!("Error handling")
         }
 
