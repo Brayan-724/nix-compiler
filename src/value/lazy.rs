@@ -6,6 +6,7 @@ use std::{fmt, mem};
 use rnix::ast;
 
 use crate::scope::Scope;
+use crate::NixResult;
 
 use super::{AsAttrSet, NixValueWrapped, NixVar};
 
@@ -49,9 +50,9 @@ impl LazyNixValue {
         }
     }
 
-    pub fn resolve(this: &Rc<RefCell<Self>>) -> NixValueWrapped {
+    pub fn resolve(this: &Rc<RefCell<Self>>) -> NixResult {
         if let Some(value) = this.borrow().as_concrete() {
-            return value;
+            return Ok(value);
         }
 
         let old = mem::replace(this.borrow_mut().deref_mut(), LazyNixValue::Resolving);
@@ -59,11 +60,11 @@ impl LazyNixValue {
         match old {
             LazyNixValue::Concrete(_) => unreachable!(),
             LazyNixValue::Pending(scope, expr) => {
-                let value = scope.visit_expr(expr);
+                let value = scope.visit_expr(expr)?;
 
                 *this.borrow_mut().deref_mut() = LazyNixValue::Concrete(value.clone());
 
-                value
+                Ok(value)
             }
             LazyNixValue::Resolving => {
                 unreachable!("Infinite recursion detected. Tried to get a value that is resolving")
@@ -71,8 +72,8 @@ impl LazyNixValue {
         }
     }
 
-    pub fn resolve_set(this: &Rc<RefCell<Self>>, recursive: bool) -> NixValueWrapped {
-        let value = Self::resolve(this);
+    pub fn resolve_set(this: &Rc<RefCell<Self>>, recursive: bool) -> NixResult {
+        let value = Self::resolve(this)?;
 
         if value.borrow().is_attr_set() {
             let values = if let Some(set) = value.borrow().as_attr_set() {
@@ -83,15 +84,15 @@ impl LazyNixValue {
 
             for var in values {
                 if recursive {
-                    var.resolve_set(true);
+                    var.resolve_set(true)?;
                 } else {
-                    var.resolve();
+                    var.resolve()?;
                 }
             }
 
-            value
+            Ok(value)
         } else {
-            value
+            Ok(value)
         }
     }
 }

@@ -3,6 +3,8 @@ use std::fmt;
 use std::ops::Deref;
 use std::rc::Rc;
 
+use crate::NixResult;
+
 use super::{LazyNixValue, NixValue, NixValueWrapped};
 
 #[derive(Clone, PartialEq, Eq)]
@@ -25,27 +27,23 @@ impl NixVar {
         self.0.borrow().as_concrete()
     }
 
-    pub fn resolve(&self) -> NixValueWrapped {
-        if let Some(a) = self.0.borrow().as_concrete() {
-            return a;
+    pub fn resolve(&self) -> NixResult {
+        if let Some(value) = self.0.borrow().as_concrete() {
+            return Ok(value);
         }
 
         LazyNixValue::resolve(&self.0)
     }
 
-    pub fn resolve_set(&self, recursive: bool) -> NixValueWrapped {
-        if let Some(a) = self.0.borrow().as_concrete() {
-            return a;
+    pub fn resolve_set(&self, recursive: bool) -> NixResult {
+        if let Some(value) = self.0.borrow().as_concrete() {
+            return Ok(value);
         }
 
         LazyNixValue::resolve_set(&self.0, recursive)
     }
 
-    pub fn resolve_and(&self, f: impl FnOnce(&NixValue) -> bool) -> bool {
-        f(self.resolve().borrow().deref())
-    }
-
-    pub fn resolve_map<T>(&self, f: impl FnOnce(&NixValue) -> T) -> T {
-        f(self.resolve().borrow().deref())
+    pub fn resolve_map<T>(&self, f: impl FnOnce(&NixValue) -> T) -> NixResult<T> {
+        Ok(f(self.resolve()?.borrow().deref()))
     }
 }

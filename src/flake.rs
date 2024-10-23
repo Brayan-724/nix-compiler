@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
-use crate::builtins;
-use crate::value::{AsAttrSet, LazyNixValue, NixValue, NixValueWrapped};
+use crate::{builtins, AsAttrSet, LazyNixValue, NixResult, NixValue, NixValueWrapped};
 
-pub fn resolve_flake(result: NixValueWrapped) -> NixValueWrapped {
+pub fn resolve_flake(result: NixValueWrapped) -> NixResult {
     let result = result.borrow();
 
     let Some(flake) = result.as_attr_set() else {
@@ -15,15 +14,15 @@ pub fn resolve_flake(result: NixValueWrapped) -> NixValueWrapped {
         .cloned()
         .unwrap_or_else(|| NixValue::AttrSet(HashMap::new()).wrap_var());
 
-    let inputs = inputs.resolve();
+    let inputs = inputs.resolve()?;
     let inputs = inputs.borrow();
 
     let Some(inputs) = inputs.as_attr_set() else {
         todo!("inputs should be attr set");
     };
 
-    let inputs = inputs.iter().map(|(key, var)| {
-        let var = var.resolve();
+    let inputs = inputs.iter().map::<NixResult<_>, _>(|(key, var)| {
+        let var = var.resolve()?;
         let var = var.borrow();
 
         let Some(var) = var.as_attr_set() else {
@@ -39,11 +38,11 @@ pub fn resolve_flake(result: NixValueWrapped) -> NixValueWrapped {
                 } else {
                     todo!("Eror handling")
                 }
-            });
+            })?;
 
         let flake_path = path.join("flake.nix");
 
-        let flake = builtins::import_path(flake_path);
+        let flake = builtins::import_path(flake_path)?;
 
         let mut out = HashMap::new();
 
@@ -58,12 +57,12 @@ pub fn resolve_flake(result: NixValueWrapped) -> NixValueWrapped {
             LazyNixValue::Concrete(flake).wrap_var(),
         );
 
-        (key.clone(), NixValue::AttrSet(out).wrap_var())
+        Ok((key.clone(), NixValue::AttrSet(out).wrap_var()))
     });
 
     let outputs = flake.get("outputs").expect("Flake should export `outputs`");
 
-    let outputs = outputs.resolve();
+    let outputs = outputs.resolve()?;
     let outputs = outputs.borrow();
 
     let Some((scope, _param, expr)) = outputs.as_lambda() else {
@@ -73,7 +72,9 @@ pub fn resolve_flake(result: NixValueWrapped) -> NixValueWrapped {
     let scope = scope.clone().new_child();
     let outputs = LazyNixValue::Pending(scope.clone(), expr.clone()).wrap_var();
 
-    for (input, input_path) in inputs {
+    for input in inputs {
+        let (input, input_path) = input?;
+
         scope.set_variable(input, input_path);
     }
 

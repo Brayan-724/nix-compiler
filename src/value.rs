@@ -99,7 +99,7 @@ impl fmt::Display for NixValue {
                 }
 
                 for (key, value) in set {
-                    let value = value.resolve();
+                    let value = value.resolve().unwrap();
                     let value = value.as_ref().borrow();
                     let value = value.deref();
 
@@ -157,7 +157,7 @@ impl fmt::Display for NixValue {
                 }
 
                 for value in list {
-                    let value = value.resolve();
+                    let value = value.resolve().unwrap();
                     let value = value.as_ref().borrow();
                     let value = value.deref();
 

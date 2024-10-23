@@ -5,8 +5,10 @@ use std::rc::Rc;
 
 use rnix::ast;
 
-use crate::builtins::NixValueBuiltin;
-use crate::value::{AsAttrSet, AsString, NixValue, NixValueWrapped, NixVar};
+use crate::{
+    AsAttrSet, AsString, NixError, NixErrorData, NixResult, NixValue, NixValueBuiltin,
+    NixValueWrapped, NixVar,
+};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileScope {
@@ -20,24 +22,14 @@ impl FileScope {
         })
     }
 
-    pub fn evaluate(self: Rc<Self>) -> Result<NixValueWrapped, ()> {
+    pub fn evaluate(self: Rc<Self>) -> NixResult {
         let content = fs::read_to_string(&self.path).unwrap();
 
-        let parse = rnix::Root::parse(&content);
-
-        for error in parse.errors() {
-            println!("\x1b[31merror: {}\x1b[0m", error);
-        }
-
-        if !parse.errors().is_empty() {
-            return Err(());
-        }
-
-        let root = parse.tree();
+        let root = rnix::Root::parse(&content).ok()?;
 
         let scope = Scope::new_with_builtins(self);
 
-        Ok(scope.visit_root(root))
+        Ok(scope.visit_root(root)?)
     }
 }
 
@@ -129,19 +121,19 @@ impl Scope {
         self: &Rc<Self>,
         value: NixValueWrapped,
         attr_path: impl Iterator<Item = ast::Attr>,
-    ) -> Option<NixVar> {
+    ) -> NixResult<NixVar> {
         let mut attr_path: Vec<_> = attr_path.collect();
         let last_attr = attr_path.pop().unwrap();
 
-        let attr_set = self.resolve_attr_set_path(value, attr_path.into_iter());
+        let attr_set = self.resolve_attr_set_path(value, attr_path.into_iter())?;
 
-        let last_attr = self.resolve_attr(last_attr);
+        let last_attr = self.resolve_attr(last_attr)?;
 
         let attr_set = attr_set.borrow();
 
-        attr_set.get(&last_attr).unwrap().or_else(|| {
+        attr_set.get(&last_attr).unwrap().ok_or_else(|| {
             println!("Cannot get {last_attr}");
-            None
+            NixError::from_span((), NixErrorData::VariableNotFound(last_attr))
         })
     }
 
@@ -149,9 +141,9 @@ impl Scope {
         self: &Rc<Self>,
         value: NixValueWrapped,
         mut attr_path: impl Iterator<Item = ast::Attr>,
-    ) -> NixValueWrapped {
+    ) -> NixResult {
         if let Some(attr) = attr_path.next() {
-            let attr = self.resolve_attr(attr);
+            let attr = self.resolve_attr(attr)?;
 
             let set_value = value.borrow().get(&attr).unwrap();
 
@@ -161,27 +153,29 @@ impl Scope {
                     .insert(attr, NixValue::AttrSet(HashMap::new()).wrap_var())
                     .unwrap();
 
-                return self.resolve_attr_set_path(last.resolve(), attr_path);
+                return self.resolve_attr_set_path(last.resolve()?, attr_path);
             };
 
-            if !set_value.resolve_and(AsAttrSet::is_attr_set) {
-                set_value.resolve_map(|set_value| todo!("Error handling for {set_value:#}"));
+            let set_value = set_value.resolve()?;
+
+            if !set_value.borrow().is_attr_set() {
+                todo!("Error handling for {:#}", set_value.borrow());
             };
 
-            self.resolve_attr_set_path(set_value.resolve(), attr_path)
+            self.resolve_attr_set_path(set_value, attr_path)
         } else {
-            value
+            Ok(value)
         }
     }
 
-    pub fn resolve_attr(self: &Rc<Self>, attr: ast::Attr) -> String {
+    pub fn resolve_attr(self: &Rc<Self>, attr: ast::Attr) -> NixResult<String> {
         match attr {
-            ast::Attr::Ident(ident) => ident.ident_token().unwrap().text().to_owned(),
-            ast::Attr::Dynamic(dynamic) => self
-                .visit_expr(dynamic.expr().unwrap())
+            ast::Attr::Ident(ident) => Ok(ident.ident_token().unwrap().text().to_owned()),
+            ast::Attr::Dynamic(dynamic) => Ok(self
+                .visit_expr(dynamic.expr().unwrap())?
                 .borrow()
                 .as_string()
-                .expect("Cannot cast as string"),
+                .expect("Cannot cast as string")),
             ast::Attr::Str(_) => todo!(),
         }
     }
