@@ -8,7 +8,7 @@ use rnix::ast;
 use crate::builtins::NixValueBuiltin;
 use crate::value::{AsAttrSet, AsString, NixValue, NixVar};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct FileScope {
     pub path: PathBuf,
 }
@@ -41,7 +41,7 @@ impl FileScope {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Scope {
     pub file: Rc<FileScope>,
     pub variables: NixVar,

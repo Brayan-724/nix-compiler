@@ -237,13 +237,31 @@ impl Scope {
             ast::BinOpKind::Mul => todo!(),
             ast::BinOpKind::Div => todo!(),
             ast::BinOpKind::And => todo!(),
-            ast::BinOpKind::Equal => todo!(),
+            ast::BinOpKind::Equal => {
+                let lhs = lhs.resolve();
+
+                let rhs = self.visit_expr(node.rhs().unwrap());
+                let rhs = rhs.resolve();
+
+                let are_equal = lhs.borrow().deref() == rhs.borrow().deref();
+
+                NixValue::Bool(are_equal).wrap_var()
+            },
             ast::BinOpKind::Implication => todo!(),
             ast::BinOpKind::Less => todo!(),
             ast::BinOpKind::LessOrEq => todo!(),
             ast::BinOpKind::More => todo!(),
             ast::BinOpKind::MoreOrEq => todo!(),
-            ast::BinOpKind::NotEqual => todo!(),
+            ast::BinOpKind::NotEqual => {
+                let lhs = lhs.resolve();
+
+                let rhs = self.visit_expr(node.rhs().unwrap());
+                let rhs = rhs.resolve();
+
+                let are_not_equal = lhs.borrow().deref() != rhs.borrow().deref();
+
+                NixValue::Bool(are_not_equal).wrap_var()
+            },
             ast::BinOpKind::Or => {
                 let Some(lhs_value) = lhs.resolve().borrow().as_bool() else {
                     todo!("Error handling");
@@ -330,7 +348,11 @@ impl Scope {
     }
 
     pub fn visit_literal(self: &Rc<Self>, node: ast::Literal) -> NixVar {
-        todo!()
+        match node.kind() {
+            ast::LiteralKind::Float(_) => todo!(),
+            ast::LiteralKind::Integer(value) => NixValue::Int(value.value().unwrap()).wrap_var(),
+            ast::LiteralKind::Uri(_) => todo!(),
+        }
     }
 
     pub fn visit_paren(self: &Rc<Self>, node: ast::Paren) -> NixVar {

@@ -9,7 +9,7 @@ use crate::scope::Scope;
 
 use super::{AsAttrSet, NixValueWrapped, NixVar};
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum LazyNixValue {
     Concrete(NixValueWrapped),
     Pending(Rc<Scope>, ast::Expr),

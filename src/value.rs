@@ -16,14 +16,14 @@ use rnix::ast;
 use crate::builtins::NixValueBuiltin;
 use crate::scope::Scope;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum NixLambdaParam {
     Ident(String),
     Pattern(ast::Pattern),
 }
 
 /// https://nix.dev/manual/nix/2.24/language/types
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub enum NixValue {
     AttrSet(HashMap<String, NixVar>),
     Bool(bool),

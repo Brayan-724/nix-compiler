@@ -6,7 +6,7 @@ use crate::flake::resolve_flake;
 use crate::scope::FileScope;
 use crate::value::{AsString, NixValue, NixVar};
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum NixValueBuiltin {
     Abort,
     CompareVersions(Option<String>),

@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use super::{LazyNixValue, NixValue, NixValueWrapped};
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct NixVar(pub Rc<RefCell<LazyNixValue>>);
 
 impl fmt::Debug for NixVar {
