@@ -81,7 +81,7 @@ def parse-example [example] {
   let code = $example_file
   | range ($separation)..
   | str join "\n"
-  | $"(ansi lcb)($in)"
+  | $"(ansi lcb)($in)(ansi reset)"
 
   { path: $"($env.PWD)/examples/($example).nix", description: $description, code: $code }
 }
@@ -149,25 +149,61 @@ def "main help" [subhelp?: string, ...args] {
   print ($more_help | align-list $commands_spec_width $help_display_list $help_render_list)
 }
 
-def all-examples [] {
-    let examples = ls examples | where ($it.name | str ends-with .nix)
-    echo $examples
+def all-examples [--minimal] {
+  let examples = {cd examples; ls | where ($it.name | str ends-with .nix) }
+  let examples = do $examples
+
+  for example in $examples {
+    let example = $example.name | str substring 0..-5
+
+    let result = if $minimal {
+      (main example $example --minimal)
+    } else {
+      (main example $example)
+    }
+
+    if $result != null {
+      print $"===================== Example (ansi wb)($example)(ansi reset) FAILED"
+    }
+  }
 }
 
-def "main example" [example?: string] {
+def "main example" [example?: string, --minimal] {
   if $example == null {
-    return (all-examples)
+    if $minimal {
+      return (all-examples --minimal)
+    } else {
+      return (all-examples)
+    }
   }
 
   let example = (parse-example $example)
 
-  print $"(ansi d)($example.path)(ansi reset)"
-  print $example.description
-  print "\nCode:\n"
-  print $example.code
-  print $"\n(ansi wb)cargo run -- (ansi d)($example.path)(ansi reset)"
+  print $"(ansi wd)($example.path)(ansi reset)"
 
-  cargo run -- ($example.path)
+  if $minimal != true {
+    print $example.description
+    print "\nCode:\n"
+    print $example.code
+    print -n "\n"
+  }
+
+  let result = do --ignore-errors {
+    cargo run ($example.path)
+  } | complete
+
+  if $result.exit_code != 0 {
+    print -n $result.stdout
+    print -en (ansi lrb) $result.stderr (ansi reset)
+    print -n "\n"
+
+    return $result.exit_code
+  } else {
+    if $minimal != true {
+      print -n $result.stdout
+      print -n "\n"
+    }
+  }
 }
 
 def main [] {
