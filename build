@@ -153,23 +153,38 @@ def all-examples [--minimal] {
   let examples = {cd examples; ls | where ($it.name | str ends-with .nix) }
   let examples = do $examples
 
+  mut errored = []
+
   for example in $examples {
     let example = $example.name | str substring 0..-5
 
     let result = if $minimal {
-      (main example $example --minimal)
+      (main example $example --minimal -e)
     } else {
-      (main example $example)
+      (main example $example -e)
     }
 
     if $result != null {
-      print $"===================== Example (ansi wb)($example)(ansi reset) FAILED"
+      $errored = $errored | append [[$example $result]]
     }
   }
+
+  print $"(ansi green)\n === FINISHED === \n(ansi reset)"
+
+  print ("Errors: " ++ ($errored | length | into string) ++ "\n")
+
+  for $example in $errored {
+    print $" - Example (ansi wb)($example.0)(ansi reset) FAILED"
+    print $"(ansi red)($example.1)(ansi reset)"
+  }
+
 }
 
-def "main example" [example?: string, --minimal] {
+def "main example" [example?: string, --minimal, --get-errors -e] {
   if $example == null {
+    # Needs to be compilable for test it
+    cargo check
+
     if $minimal {
       return (all-examples --minimal)
     } else {
@@ -189,7 +204,7 @@ def "main example" [example?: string, --minimal] {
   }
 
   let result = do --ignore-errors {
-    cargo run ($example.path)
+    cargo run --quiet -- ($example.path)
   } | complete
 
   if $result.exit_code != 0 {
@@ -197,7 +212,11 @@ def "main example" [example?: string, --minimal] {
     print -en (ansi lrb) $result.stderr (ansi reset)
     print -n "\n"
 
-    return $result.exit_code
+    if $e {
+      return $result.stderr
+    } else {
+      return $result.exit_code
+    }
   } else {
     if $minimal != true {
       print -n $result.stdout
