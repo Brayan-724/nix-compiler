@@ -1,37 +1,16 @@
+mod file;
+
 use std::collections::HashMap;
-use std::fs;
-use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use rnix::ast;
+use rowan::ast::AstNode;
+
+pub use file::FileScope;
 
 use crate::{
-    AsAttrSet, AsString, NixError, NixErrorData, NixResult, NixValue, NixValueBuiltin,
-    NixValueWrapped, NixVar,
+    AsAttrSet, AsString, NixError, NixResult, NixValue, NixValueBuiltin, NixValueWrapped, NixVar,
 };
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct FileScope {
-    pub path: PathBuf,
-}
-
-impl FileScope {
-    pub fn from_path(path: impl AsRef<Path>) -> Rc<Self> {
-        Rc::new(FileScope {
-            path: path.as_ref().to_path_buf(),
-        })
-    }
-
-    pub fn evaluate(self: Rc<Self>) -> NixResult {
-        let content = fs::read_to_string(&self.path).unwrap();
-
-        let root = rnix::Root::parse(&content).ok()?;
-
-        let scope = Scope::new_with_builtins(self);
-
-        Ok(scope.visit_root(root)?)
-    }
-}
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Scope {
@@ -120,20 +99,20 @@ impl Scope {
     pub fn resolve_attr_path<'a>(
         self: &Rc<Self>,
         value: NixValueWrapped,
-        attr_path: impl Iterator<Item = ast::Attr>,
+        attr_path: ast::Attrpath,
     ) -> NixResult<NixVar> {
-        let mut attr_path: Vec<_> = attr_path.collect();
-        let last_attr = attr_path.pop().unwrap();
+        let mut attrs: Vec<_> = attr_path.attrs().collect();
+        let last_attr = attrs.pop().unwrap();
 
-        let attr_set = self.resolve_attr_set_path(value, attr_path.into_iter())?;
+        let attr_set = self.resolve_attr_set_path(value, attrs.into_iter())?;
 
-        let last_attr = self.resolve_attr(last_attr)?;
+        let attr = self.resolve_attr(last_attr.clone())?;
 
         let attr_set = attr_set.borrow();
 
-        attr_set.get(&last_attr).unwrap().ok_or_else(|| {
-            println!("Cannot get {last_attr}");
-            NixError::from_span((), NixErrorData::VariableNotFound(last_attr))
+        attr_set.get(&attr).unwrap().ok_or_else(|| {
+            println!("Cannot get {attr}");
+            NixError::from_message(last_attr.syntax(), format!("Variable '{attr}' not found"))
         })
     }
 

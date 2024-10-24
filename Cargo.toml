@@ -4,5 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# Parser
 rnix = "0.11.0"
+rowan = "0.15.0" # Ast interaction with rnix
+
+# Utility
 thiserror = "1.0.65"

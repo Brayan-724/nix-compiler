@@ -293,7 +293,7 @@ impl Scope {
         let value = self.visit_expr(node.expr().unwrap())?;
 
         let has_attr = self
-            .resolve_attr_path(value, node.attrpath().unwrap().attrs())
+            .resolve_attr_path(value, node.attrpath().unwrap())
             // TODO: Check VariableNotFound error
             .is_ok();
 
@@ -305,7 +305,8 @@ impl Scope {
         let varname = node.text().to_string();
 
         self.get_variable(varname.clone())
-            .ok_or_else(|| NixError::from_span((), crate::NixErrorData::VariableNotFound(varname)))?
+            .ok_or_else(|| NixError::from_message(node, format!("Variable '{varname}' not found")))
+            .unwrap_or_else(|err| panic!("{err}"))
             .resolve()
     }
 
@@ -424,7 +425,7 @@ impl Scope {
     pub fn visit_select(self: &Rc<Self>, node: ast::Select) -> NixResult {
         let var = self.visit_expr(node.expr().unwrap())?;
 
-        self.resolve_attr_path(var, node.attrpath().unwrap().attrs())
+        self.resolve_attr_path(var, node.attrpath().unwrap())
             .unwrap_or_else(|err| panic!("{err}"))
             .resolve()
     }
