@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use rnix::ast::{self, AstToken, HasEntry};
 
+use crate::result::{NixLabel, NixLabelKind, NixLabelMessage};
 use crate::{builtins, NixError};
 use crate::{
     AsAttrSet, AsString, LazyNixValue, NixLambdaParam, NixResult, NixValue, NixValueBuiltin,
@@ -305,8 +306,18 @@ impl Scope {
         let varname = node.text().to_string();
 
         self.get_variable(varname.clone())
-            .ok_or_else(|| NixError::from_message(node, format!("Variable '{varname}' not found")))
-            .unwrap_or_else(|err| panic!("{err}"))
+            .ok_or_else(|| {
+                let label = NixLabel::from_syntax_token(
+                    &self.file,
+                    &node,
+                    NixLabelMessage::VariableNotFound,
+                    NixLabelKind::Error,
+                );
+                NixError::from_message(
+                    label,
+                    format!("Variable '\x1b[1;95m{varname}\x1b[0m' not found"),
+                )
+            })?
             .resolve()
     }
 
@@ -425,8 +436,7 @@ impl Scope {
     pub fn visit_select(self: &Rc<Self>, node: ast::Select) -> NixResult {
         let var = self.visit_expr(node.expr().unwrap())?;
 
-        self.resolve_attr_path(var, node.attrpath().unwrap())
-            .unwrap_or_else(|err| panic!("{err}"))
+        self.resolve_attr_path(var, node.attrpath().unwrap())?
             .resolve()
     }
 

@@ -1,7 +1,9 @@
 use std::fmt::{self, Write};
 use std::ops::Range;
+use std::path::PathBuf;
 
 use rnix::{parser, SyntaxKind, SyntaxNode, SyntaxToken};
+use thiserror::Error;
 
 use crate::value::NixValueWrapped;
 use crate::FileScope;
@@ -16,10 +18,11 @@ pub struct NixError {
 
 #[derive(Clone, Debug)]
 pub struct NixLabel {
+    pub path: PathBuf,
     pub line: usize,
     pub range: Range<usize>,
     pub context: String,
-    pub label: String,
+    pub label: NixLabelMessage,
     pub kind: NixLabelKind,
 }
 
@@ -27,6 +30,21 @@ pub struct NixLabel {
 pub enum NixLabelKind {
     Error,
     Help,
+}
+
+#[derive(Clone, Debug, Error)]
+pub enum NixLabelMessage {
+    #[error("Help: add '\x1b[1;95m{0}\x1b[0m' here")]
+    AddHere(&'static str),
+
+    #[error("{0}")]
+    Custom(String),
+
+    #[error("Unexpected token")]
+    UnexpectedToken,
+
+    #[error("Variable not found")]
+    VariableNotFound,
 }
 
 impl NixLabelKind {
@@ -43,6 +61,13 @@ impl NixLabelKind {
             NixLabelKind::Help => "-",
         }
     }
+
+    pub fn text(&self) -> &'static str {
+        match self {
+            NixLabelKind::Error => "error",
+            NixLabelKind::Help => "help",
+        }
+    }
 }
 
 impl fmt::Display for NixError {
@@ -51,9 +76,13 @@ impl fmt::Display for NixError {
 
         let first_label = self.labels.first().unwrap();
 
+        f.write_str(first_label.kind.color())?;
+        f.write_str(first_label.kind.text())?;
+        f.write_str(":\x1b[0m ")?;
         f.write_str(&self.message)?;
         f.write_fmt(format_args!(
-            "\n --> <anonymous>:{}:{}\n",
+            "\n \x1b[1;34m-->\x1b[0m {}:{}:{}\n",
+            first_label.path.display(),
             first_label.line,
             first_label.range.start + 1,
         ))?;
@@ -65,8 +94,9 @@ impl fmt::Display for NixError {
         let line_padding = " ".repeat(max_line_width);
         let dots = ".".repeat(max_line_width);
 
+        f.write_str("\x1b[1;34m")?;
         f.write_str(&line_padding)?;
-        f.write_str(" | ")?;
+        f.write_str(" | \x1b[0m")?;
 
         let mut last_line = labels.first().unwrap().line;
 
@@ -80,8 +110,8 @@ impl fmt::Display for NixError {
             last_line = label.line;
 
             f.write_fmt(format_args!(
-                "\n{line:0>max_line_width$} | {context}\
-                 \n{line_padding} | {spaces}{color}{arrow} {label}\x1b[0m",
+                "\n\x1b[1;34m{line:0>max_line_width$} | \x1b[0m{context}\
+                 \n\x1b[1;34m{line_padding} | \x1b[0m{spaces}{color}{arrow} {label}\x1b[0m",
                 line = label.line,
                 context = label.context,
                 spaces = " ".repeat(label.range.start),
@@ -98,9 +128,9 @@ impl fmt::Display for NixError {
 impl std::error::Error for NixError {}
 
 impl NixError {
-    pub fn from_message(label: impl Into<NixLabel>, message: impl Into<String>) -> Self {
+    pub fn from_message(label: NixLabel, message: impl ToString) -> Self {
         Self {
-            message: message.into(),
+            message: message.to_string(),
             labels: vec![label.into()],
         }
     }
@@ -121,7 +151,7 @@ impl NixError {
                         file,
                         range_start,
                         expected.len(),
-                        format!("help: add '{expected}' here"),
+                        NixLabelMessage::AddHere(expected),
                         NixLabelKind::Help,
                     );
 
@@ -131,7 +161,7 @@ impl NixError {
                         file,
                         range_start + 1,
                         range.len().into(),
-                        format!("unexpected token"),
+                        NixLabelMessage::UnexpectedToken,
                         NixLabelKind::Error,
                     );
 
@@ -160,9 +190,9 @@ impl NixLabel {
         file: &FileScope,
         mut offset: usize,
         size: usize,
-        label: String,
+        label: NixLabelMessage,
         kind: NixLabelKind,
-    ) -> NixLabel {
+    ) -> Self {
         loop {
             let last_newline = offset
                 - file.content[..offset]
@@ -191,7 +221,8 @@ impl NixLabel {
 
             let context = file.content[last_newline..next_newline].to_owned();
 
-            break NixLabel {
+            break Self {
+                path: file.path.clone(),
                 line,
                 range: column..column + size,
                 context,
@@ -200,29 +231,41 @@ impl NixLabel {
             };
         }
     }
-}
 
-impl From<&SyntaxNode> for NixLabel {
-    fn from(_value: &SyntaxNode) -> Self {
-        Self {
-            line: 1,
-            range: 0..1,
-            context: String::new(),
-            label: String::new(),
-            kind: NixLabelKind::Help,
-        }
+    pub fn from_syntax_node(
+        file: &FileScope,
+        node: &SyntaxNode,
+        label: NixLabelMessage,
+        kind: NixLabelKind,
+    ) -> Self {
+        NixLabel::from_offset(
+            file,
+            usize::from(node.text_range().start()) + 1,
+            node.text_range().len().into(),
+            label,
+            kind,
+        )
+    }
+
+    pub fn from_syntax_token(
+        file: &FileScope,
+        node: &SyntaxToken,
+        label: NixLabelMessage,
+        kind: NixLabelKind,
+    ) -> Self {
+        NixLabel::from_offset(
+            file,
+            usize::from(node.text_range().start()) + 1,
+            node.text_range().len().into(),
+            label,
+            kind,
+        )
     }
 }
 
-impl From<SyntaxToken> for NixLabel {
-    fn from(_value: SyntaxToken) -> Self {
-        Self {
-            line: 1,
-            range: 0..1,
-            context: String::new(),
-            label: String::new(),
-            kind: NixLabelKind::Help,
-        }
+impl From<String> for NixLabelMessage {
+    fn from(value: String) -> Self {
+        Self::Custom(value)
     }
 }
 

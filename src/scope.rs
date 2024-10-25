@@ -8,6 +8,7 @@ use rowan::ast::AstNode;
 
 pub use file::FileScope;
 
+use crate::result::{NixLabel, NixLabelKind, NixLabelMessage};
 use crate::{
     AsAttrSet, AsString, NixError, NixResult, NixValue, NixValueBuiltin, NixValueWrapped, NixVar,
 };
@@ -111,8 +112,16 @@ impl Scope {
         let attr_set = attr_set.borrow();
 
         attr_set.get(&attr).unwrap().ok_or_else(|| {
-            println!("Cannot get {attr}");
-            NixError::from_message(last_attr.syntax(), format!("Variable '{attr}' not found"))
+            let label = NixLabel::from_syntax_node(
+                &self.file,
+                last_attr.syntax(),
+                NixLabelMessage::VariableNotFound,
+                NixLabelKind::Error,
+            );
+            NixError::from_message(
+                label,
+                format!("Attribute '\x1b[1;95m{attr}\x1b[0m' missing"),
+            )
         })
     }
 
