@@ -99,7 +99,10 @@ impl fmt::Display for NixValue {
                 }
 
                 for (key, value) in set {
-                    let value = value.resolve().unwrap();
+                    let value = value.resolve().unwrap_or_else(|err| {
+                        eprintln!("{err}");
+                        std::process::exit(1)
+                    });
                     let value = value.as_ref().borrow();
                     let value = value.deref();
 
