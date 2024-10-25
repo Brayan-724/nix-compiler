@@ -98,7 +98,7 @@ pub fn compare_versions(argument: NixValueWrapped, first_arg: Option<String>) ->
         match first.cmp(&second) {
             std::cmp::Ordering::Less => return Ok(NixValue::Int(-1).wrap()),
             std::cmp::Ordering::Equal => {}
-            std::cmp::Ordering::Greater => return Ok(NixValue::Int(-1).wrap()),
+            std::cmp::Ordering::Greater => return Ok(NixValue::Int(1).wrap()),
         }
     }
 
