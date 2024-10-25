@@ -4,11 +4,9 @@ use std::rc::Rc;
 
 use rnix::ast::{self, AstToken, HasEntry};
 
-use crate::result::{NixLabel, NixLabelKind, NixLabelMessage};
-use crate::{builtins, NixError};
 use crate::{
-    AsAttrSet, AsString, LazyNixValue, NixLambdaParam, NixResult, NixValue, NixValueBuiltin,
-    NixValueWrapped, Scope,
+    AsAttrSet, AsString, LazyNixValue, NixError, NixLabel, NixLabelKind, NixLabelMessage,
+    NixLambdaParam, NixResult, NixValue, NixValueWrapped, Scope,
 };
 
 #[allow(unused_variables, reason = "todo")]
@@ -125,14 +123,7 @@ impl Scope {
         match lambda.deref() {
             NixValue::Builtin(builtin) => {
                 let argument = self.visit_expr(node.argument().unwrap())?;
-                match builtin {
-                    NixValueBuiltin::Abort => builtins::abort(argument),
-                    NixValueBuiltin::CompareVersions(first_arg) => {
-                        builtins::compare_versions(argument, first_arg.clone())
-                    }
-                    NixValueBuiltin::Import => builtins::import(argument),
-                    NixValueBuiltin::ToString => builtins::to_string(argument),
-                }
+                builtin.run(argument)
             }
             NixValue::Lambda(scope, param, expr) => {
                 let argument_var = self.visit_expr(node.argument().unwrap())?;

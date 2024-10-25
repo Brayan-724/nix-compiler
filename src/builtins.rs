@@ -1,3 +1,5 @@
+use core::fmt;
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::ops::Deref;
 use std::path::Path;
@@ -5,12 +7,58 @@ use std::path::Path;
 use crate::flake::resolve_flake;
 use crate::{AsString, FileScope, NixResult, NixValue, NixValueWrapped};
 
-#[derive(Clone, PartialEq, Eq)]
+pub fn get_builtins() -> NixValue {
+    let mut builtins = HashMap::new();
+
+    macro_rules! insert {
+        ($key:ident = $value:expr) => {
+            builtins.insert(stringify!($key).to_owned(), $value.wrap_var())
+        };
+    }
+
+    insert!(abort = NixValue::Builtin(NixValueBuiltin::Abort));
+    insert!(compareVersions = NixValue::Builtin(NixValueBuiltin::CompareVersions(None)));
+    insert!(getEnv = NixValue::Builtin(NixValueBuiltin::GetEnv));
+    insert!(import = NixValue::Builtin(NixValueBuiltin::Import));
+    insert!(nixVersion = NixValue::String(String::from("2.24.9")));
+    insert!(toString = NixValue::Builtin(NixValueBuiltin::ToString));
+
+    NixValue::AttrSet(builtins)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NixValueBuiltin {
     Abort,
     CompareVersions(Option<String>),
+    GetEnv,
     Import,
     ToString,
+}
+
+impl fmt::Display for NixValueBuiltin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            NixValueBuiltin::Abort => "<abort>",
+            NixValueBuiltin::CompareVersions(_) => "<compare_versions>",
+            NixValueBuiltin::GetEnv => "<get_env>",
+            NixValueBuiltin::Import => "<import>",
+            NixValueBuiltin::ToString => "<to_string>",
+        })
+    }
+}
+
+impl NixValueBuiltin {
+    pub fn run(&self, argument: NixValueWrapped) -> NixResult {
+        use NixValueBuiltin::*;
+
+        match self {
+            Abort => abort(argument),
+            CompareVersions(first_arg) => compare_versions(argument, first_arg.clone()),
+            GetEnv => get_env(argument),
+            Import => import(argument),
+            ToString => to_string(argument),
+        }
+    }
 }
 
 pub fn abort(argument: NixValueWrapped) -> ! {
@@ -55,6 +103,16 @@ pub fn compare_versions(argument: NixValueWrapped, first_arg: Option<String>) ->
     }
 
     Ok(NixValue::Int(0).wrap())
+}
+
+pub fn get_env(argument: NixValueWrapped) -> NixResult {
+    let Some(env) = argument.borrow().as_string() else {
+        todo!("Error handling")
+    };
+
+    let value = std::env::var(env).unwrap_or_default();
+
+    Ok(NixValue::String(value).wrap())
 }
 
 pub fn import(argument: NixValueWrapped) -> NixResult {

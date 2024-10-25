@@ -8,7 +8,7 @@ mod value;
 use std::env;
 
 pub use builtins::NixValueBuiltin;
-pub use result::{NixError, NixResult};
+pub use result::{NixError, NixLabel, NixLabelKind, NixLabelMessage, NixResult};
 pub use scope::{FileScope, Scope};
 pub use value::{
     AsAttrSet, AsString, LazyNixValue, NixLambdaParam, NixValue, NixValueWrapped, NixVar,

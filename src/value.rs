@@ -54,12 +54,7 @@ impl fmt::Debug for NixValue {
             }
             NixValue::Bool(true) => f.write_str("true"),
             NixValue::Bool(false) => f.write_str("false"),
-            NixValue::Builtin(NixValueBuiltin::Abort) => f.write_str("abort"),
-            NixValue::Builtin(NixValueBuiltin::CompareVersions(_)) => {
-                f.write_str("compareVersions")
-            }
-            NixValue::Builtin(NixValueBuiltin::Import) => f.write_str("import"),
-            NixValue::Builtin(NixValueBuiltin::ToString) => f.write_str("toString"),
+            NixValue::Builtin(builtin) => fmt::Debug::fmt(builtin, f),
             NixValue::Int(val) => f.write_str(&val.to_string()),
             NixValue::Lambda(..) => f.write_str("<lamda>"),
             NixValue::List(list) => {
@@ -138,12 +133,7 @@ impl fmt::Display for NixValue {
             }
             NixValue::Bool(true) => f.write_str("true"),
             NixValue::Bool(false) => f.write_str("false"),
-            NixValue::Builtin(NixValueBuiltin::Abort) => f.write_str("abort"),
-            NixValue::Builtin(NixValueBuiltin::CompareVersions(_)) => {
-                f.write_str("compareVersions")
-            }
-            NixValue::Builtin(NixValueBuiltin::Import) => f.write_str("import"),
-            NixValue::Builtin(NixValueBuiltin::ToString) => f.write_str("toString"),
+            NixValue::Builtin(builtin) => fmt::Display::fmt(builtin, f),
             NixValue::Int(val) => f.write_str(&val.to_string()),
             NixValue::Lambda(..) => f.write_str("<lamda>"),
             NixValue::List(list) => {

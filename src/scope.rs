@@ -10,7 +10,7 @@ pub use file::FileScope;
 
 use crate::result::{NixLabel, NixLabelKind, NixLabelMessage};
 use crate::{
-    AsAttrSet, AsString, NixError, NixResult, NixValue, NixValueBuiltin, NixValueWrapped, NixVar,
+    builtins, AsAttrSet, AsString, NixError, NixResult, NixValue, NixValueBuiltin, NixValueWrapped, NixVar
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -29,22 +29,12 @@ impl Scope {
         }
 
         let mut globals = HashMap::new();
-        let mut builtins = HashMap::new();
+        let builtins = builtins::get_builtins();
 
         insert!(globals; abort = NixValue::Builtin(NixValueBuiltin::Abort));
-        insert!(builtins; abort = NixValue::Builtin(NixValueBuiltin::Abort));
-
-        insert!(builtins; compareVersions = NixValue::Builtin(NixValueBuiltin::CompareVersions(None)));
-
         insert!(globals; import = NixValue::Builtin(NixValueBuiltin::Import));
-        insert!(builtins; import = NixValue::Builtin(NixValueBuiltin::Import));
-
-        insert!(builtins; nixVersion = NixValue::String(String::from("2.24.9")));
-
         insert!(globals; toString = NixValue::Builtin(NixValueBuiltin::ToString));
-        insert!(builtins; toString = NixValue::Builtin(NixValueBuiltin::ToString));
-
-        insert!(globals; builtins = NixValue::AttrSet(builtins));
+        insert!(globals; builtins = builtins);
 
         let parent = Rc::new(Scope {
             file: file_scope.clone(),
