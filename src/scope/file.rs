@@ -15,7 +15,11 @@ pub struct FileScope {
 impl FileScope {
     pub fn from_path(path: impl AsRef<Path>) -> Rc<Self> {
         Rc::new(FileScope {
-            path: path.as_ref().to_path_buf(),
+            path: path
+                .as_ref()
+                .to_path_buf()
+                .canonicalize()
+                .expect("File path is already found"),
             content: fs::read_to_string(path).unwrap(),
         })
     }
