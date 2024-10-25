@@ -1,8 +1,7 @@
-use std::fmt;
+use std::fmt::{self, Write};
 use std::ops::Range;
 
 use rnix::{parser, SyntaxKind, SyntaxNode, SyntaxToken};
-use thiserror::Error;
 
 use crate::value::NixValueWrapped;
 use crate::FileScope;
@@ -12,7 +11,6 @@ pub type NixResult<V = NixValueWrapped> = Result<V, NixError>;
 #[derive(Clone, Debug)]
 pub struct NixError {
     pub message: String,
-    pub main_label: NixLabel,
     pub labels: Vec<NixLabel>,
 }
 
@@ -22,35 +20,77 @@ pub struct NixLabel {
     pub range: Range<usize>,
     pub context: String,
     pub label: String,
+    pub kind: NixLabelKind,
+}
+
+#[derive(Clone, Debug)]
+pub enum NixLabelKind {
+    Error,
+    Help,
 }
 
 impl fmt::Display for NixError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        assert!(!self.labels.is_empty());
+
+        let first_label = self.labels.first().unwrap();
+
         f.write_str(&self.message)?;
+        f.write_fmt(format_args!(
+            "\n --> <anonymous>:{}:{}\n",
+            first_label.line,
+            first_label.range.start + 1,
+        ))?;
+
+        let mut labels = self.labels.clone();
+        labels.sort_by_key(|v| v.line);
+
+        let max_line_width = labels.last().unwrap().line.to_string().len();
+        let line_padding = " ".repeat(max_line_width);
+        let dots = ".".repeat(max_line_width);
+
+        f.write_str(&line_padding)?;
+        f.write_str(" | ")?;
+
+        let mut last_line = labels.first().unwrap().line;
 
         let mut render_label = |label: &NixLabel| {
+            if label.line.abs_diff(last_line) >= 2 {
+                f.write_char('\n')?;
+                f.write_str(&dots)?;
+                f.write_str(" |")?;
+            }
+
+            last_line = label.line;
+
             let column_start = label.range.start;
             let range_len = label.range.len();
 
+            let color = match label.kind {
+                NixLabelKind::Error => "1;91m",
+                NixLabelKind::Help => "1;96m",
+            };
+
+            let symbol = match label.kind {
+                NixLabelKind::Error => "^",
+                NixLabelKind::Help => "-",
+            };
+
             f.write_fmt(format_args!(
-                "\n {line} | {ctx}\n {dots} | {spaces}{arrow} {label}\n     at {line}:{column}",
+                "\n{line:0>max_line_width$} | {ctx}\n{line_padding} | {spaces}\x1b[{color}{arrow} {label}\x1b[0m",
                 label = label.label,
                 line = label.line,
-                column = column_start + 1,
                 ctx = label.context,
-                dots = ".".repeat(label.line.to_string().len()),
                 spaces = " ".repeat(column_start),
-                arrow = "^".repeat(range_len)
+                arrow = symbol.repeat(range_len)
             ))
         };
 
-        render_label(&self.main_label)?;
-
-        for label in &self.labels {
+        for label in &labels {
             render_label(label)?;
         }
 
-        Ok(())
+        f.write_char('\n')
     }
 }
 
@@ -60,14 +100,13 @@ impl NixError {
     pub fn from_message(label: impl Into<NixLabel>, message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
-            main_label: label.into(),
-            labels: Vec::new(),
+            labels: vec![label.into()],
         }
     }
 
     pub fn from_parse_error(file: &FileScope, error: parser::ParseError) -> Self {
         use parser::ParseError::*;
-        let (message, main_label, labels) = match error {
+        let (message, labels) = match error {
             Unexpected(_) => todo!(),
             UnexpectedExtra(_) => todo!(),
             UnexpectedWanted(unexpected, range, expected) => {
@@ -78,35 +117,46 @@ impl NixError {
                     let expected = syntax_kind_to_string(*expected);
 
                     let expected_label = {
-                        let last_newline = range_start
-                            - file.content[..range_start]
+                        let mut range_start = range_start;
+
+                        loop {
+                            let last_newline = range_start
+                                - file.content[..range_start]
+                                    .chars()
+                                    .rev()
+                                    .skip(1)
+                                    .position(|c| c == '\n')
+                                    .unwrap_or(range_start);
+
+                            let next_newline = file.content[last_newline..]
                                 .chars()
-                                .rev()
-                                .skip(1)
                                 .position(|c| c == '\n')
-                                .unwrap_or(range_start);
+                                .unwrap_or(file.content.len() - last_newline)
+                                + last_newline;
 
-                        let next_newline = file.content[last_newline..]
-                            .chars()
-                            .position(|c| c == '\n')
-                            .unwrap_or(file.content.len() - last_newline)
-                            + last_newline;
+                            let line = file.content[..=last_newline]
+                                .chars()
+                                .filter(|c| *c == '\n')
+                                .count()
+                                + 1;
 
-                        let line = file.content[..=last_newline]
-                            .chars()
-                            .filter(|c| *c == '\n')
-                            .count()
-                            + 1;
+                            let Some((line, column)) = (range_start - last_newline)
+                                .checked_sub(1)
+                                .map(|c| (line, c))
+                            else {
+                                range_start = last_newline.saturating_sub(1);
+                                continue;
+                            };
 
-                        let column = range_start - last_newline - 1;
+                            let context = file.content[last_newline..next_newline].to_owned();
 
-                        let context = file.content[last_newline..next_newline].to_owned();
-
-                        NixLabel {
-                            line,
-                            range: column..column + expected.len(),
-                            context,
-                            label: format!("Expected '{expected}'"),
+                            break NixLabel {
+                                line,
+                                range: column..column + expected.len(),
+                                context,
+                                label: format!("help: add '{expected}' here"),
+                                kind: NixLabelKind::Help,
+                            };
                         }
                     };
 
@@ -140,16 +190,14 @@ impl NixError {
                             line,
                             range: column..column + usize::from(range.len()),
                             context,
-                            label: format!("Unexpected '{unexpected}'"),
+                            label: format!("unexpected token"),
+                            kind: NixLabelKind::Error,
                         }
                     };
 
                     (
-                        format!(
-                            "ParseError: Unexpected token '{unexpected}'. Expected '{expected}'"
-                        ),
-                        expected_label,
-                        vec![unexpected_label],
+                        format!("\x1b[1;91merror\x1b[0m: Unexpected token '{unexpected}'"),
+                        vec![unexpected_label, expected_label],
                     )
                 } else {
                     todo!()
@@ -163,11 +211,7 @@ impl NixError {
             _ => unreachable!(),
         };
 
-        Self {
-            message,
-            main_label,
-            labels,
-        }
+        Self { message, labels }
     }
 }
 
@@ -178,6 +222,7 @@ impl From<&SyntaxNode> for NixLabel {
             range: 0..1,
             context: String::new(),
             label: String::new(),
+            kind: NixLabelKind::Help,
         }
     }
 }
@@ -189,6 +234,7 @@ impl From<SyntaxToken> for NixLabel {
             range: 0..1,
             context: String::new(),
             label: String::new(),
+            kind: NixLabelKind::Help,
         }
     }
 }
