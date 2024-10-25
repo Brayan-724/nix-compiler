@@ -25,6 +25,7 @@ def get-all-examples [] {
   ls examples/ 
   | where ($it.name | str ends-with .nix) 
   | get name 
+  | sort
   | each {|it| {path: $it, file: (open $it), args: ""}}
   | each {|it| $it | merge {name: ($it.path | str substring 9..-5)}} 
   | each {|it| $it | merge {desc: ($it.file 
@@ -164,7 +165,7 @@ def all-examples [--minimal] {
       (main example $example -e)
     }
 
-    if $result != null {
+    if $result != null and ($example | str starts-with "error-") == false {
       $errored = $errored | append [[$example $result]]
     }
   }
