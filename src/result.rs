@@ -29,6 +29,22 @@ pub enum NixLabelKind {
     Help,
 }
 
+impl NixLabelKind {
+    pub fn color(&self) -> &'static str {
+        match self {
+            NixLabelKind::Error => "\x1b[1;91m",
+            NixLabelKind::Help => "\x1b[1;96m",
+        }
+    }
+
+    pub fn symbol(&self) -> &'static str {
+        match self {
+            NixLabelKind::Error => "^",
+            NixLabelKind::Help => "-",
+        }
+    }
+}
+
 impl fmt::Display for NixError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         assert!(!self.labels.is_empty());
@@ -54,7 +70,7 @@ impl fmt::Display for NixError {
 
         let mut last_line = labels.first().unwrap().line;
 
-        let mut render_label = |label: &NixLabel| {
+        for label in &labels {
             if label.line.abs_diff(last_line) >= 2 {
                 f.write_char('\n')?;
                 f.write_str(&dots)?;
@@ -63,31 +79,16 @@ impl fmt::Display for NixError {
 
             last_line = label.line;
 
-            let column_start = label.range.start;
-            let range_len = label.range.len();
-
-            let color = match label.kind {
-                NixLabelKind::Error => "1;91m",
-                NixLabelKind::Help => "1;96m",
-            };
-
-            let symbol = match label.kind {
-                NixLabelKind::Error => "^",
-                NixLabelKind::Help => "-",
-            };
-
             f.write_fmt(format_args!(
-                "\n{line:0>max_line_width$} | {ctx}\n{line_padding} | {spaces}\x1b[{color}{arrow} {label}\x1b[0m",
-                label = label.label,
+                "\n{line:0>max_line_width$} | {context}\
+                 \n{line_padding} | {spaces}{color}{arrow} {label}\x1b[0m",
                 line = label.line,
-                ctx = label.context,
-                spaces = " ".repeat(column_start),
-                arrow = symbol.repeat(range_len)
-            ))
-        };
-
-        for label in &labels {
-            render_label(label)?;
+                context = label.context,
+                spaces = " ".repeat(label.range.start),
+                color = label.kind.color(),
+                arrow = label.kind.symbol().repeat(label.range.len()),
+                label = label.label,
+            ))?;
         }
 
         f.write_char('\n')
@@ -116,84 +117,23 @@ impl NixError {
                     let expected = expected.first().unwrap();
                     let expected = syntax_kind_to_string(*expected);
 
-                    let expected_label = {
-                        let mut range_start = range_start;
-
-                        loop {
-                            let last_newline = range_start
-                                - file.content[..range_start]
-                                    .chars()
-                                    .rev()
-                                    .skip(1)
-                                    .position(|c| c == '\n')
-                                    .unwrap_or(range_start);
-
-                            let next_newline = file.content[last_newline..]
-                                .chars()
-                                .position(|c| c == '\n')
-                                .unwrap_or(file.content.len() - last_newline)
-                                + last_newline;
-
-                            let line = file.content[..=last_newline]
-                                .chars()
-                                .filter(|c| *c == '\n')
-                                .count()
-                                + 1;
-
-                            let Some((line, column)) = (range_start - last_newline)
-                                .checked_sub(1)
-                                .map(|c| (line, c))
-                            else {
-                                range_start = last_newline.saturating_sub(1);
-                                continue;
-                            };
-
-                            let context = file.content[last_newline..next_newline].to_owned();
-
-                            break NixLabel {
-                                line,
-                                range: column..column + expected.len(),
-                                context,
-                                label: format!("help: add '{expected}' here"),
-                                kind: NixLabelKind::Help,
-                            };
-                        }
-                    };
+                    let expected_label = NixLabel::from_offset(
+                        file,
+                        range_start,
+                        expected.len(),
+                        format!("help: add '{expected}' here"),
+                        NixLabelKind::Help,
+                    );
 
                     let unexpected = syntax_kind_to_string(unexpected);
 
-                    let unexpected_label = {
-                        let last_newline = range_start
-                            - file.content[..range_start]
-                                .chars()
-                                .rev()
-                                .position(|c| c == '\n')
-                                .unwrap_or(range_start);
-
-                        let next_newline = file.content[last_newline..]
-                            .chars()
-                            .position(|c| c == '\n')
-                            .unwrap_or(file.content.len() - last_newline)
-                            + last_newline;
-
-                        let line = file.content[..=last_newline]
-                            .chars()
-                            .filter(|c| *c == '\n')
-                            .count()
-                            + 1;
-
-                        let column = range_start - last_newline;
-
-                        let context = file.content[last_newline..next_newline].to_owned();
-
-                        NixLabel {
-                            line,
-                            range: column..column + usize::from(range.len()),
-                            context,
-                            label: format!("unexpected token"),
-                            kind: NixLabelKind::Error,
-                        }
-                    };
+                    let unexpected_label = NixLabel::from_offset(
+                        file,
+                        range_start + 1,
+                        range.len().into(),
+                        format!("unexpected token"),
+                        NixLabelKind::Error,
+                    );
 
                     (
                         format!("\x1b[1;91merror\x1b[0m: Unexpected token '{unexpected}'"),
@@ -212,6 +152,53 @@ impl NixError {
         };
 
         Self { message, labels }
+    }
+}
+
+impl NixLabel {
+    pub fn from_offset(
+        file: &FileScope,
+        mut offset: usize,
+        size: usize,
+        label: String,
+        kind: NixLabelKind,
+    ) -> NixLabel {
+        loop {
+            let last_newline = offset
+                - file.content[..offset]
+                    .chars()
+                    .rev()
+                    .position(|c| c == '\n')
+                    .unwrap_or(offset);
+
+            let next_newline = file.content[last_newline..]
+                .chars()
+                .position(|c| c == '\n')
+                .unwrap_or(file.content.len() - last_newline)
+                + last_newline;
+
+            let line = file.content[..=last_newline]
+                .chars()
+                .filter(|c| *c == '\n')
+                .count()
+                + 1;
+
+            let Some((line, column)) = (offset - last_newline).checked_sub(1).map(|c| (line, c))
+            else {
+                offset = last_newline.saturating_sub(1);
+                continue;
+            };
+
+            let context = file.content[last_newline..next_newline].to_owned();
+
+            break NixLabel {
+                line,
+                range: column..column + size,
+                context,
+                label,
+                kind,
+            };
+        }
     }
 }
 
