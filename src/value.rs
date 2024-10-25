@@ -234,6 +234,14 @@ impl NixValue {
             None
         }
     }
+
+    pub fn as_path(&self) -> Option<PathBuf> {
+        match self {
+            NixValue::Path(path) => Some(path.to_path_buf()),
+            NixValue::String(string) => Some(PathBuf::from(string)),
+_ => None
+        }
+    }
 }
 
 pub trait AsString {

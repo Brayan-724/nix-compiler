@@ -21,6 +21,7 @@ pub fn get_builtins() -> NixValue {
     insert!(getEnv = NixValue::Builtin(NixValueBuiltin::GetEnv));
     insert!(import = NixValue::Builtin(NixValueBuiltin::Import));
     insert!(nixVersion = NixValue::String(String::from("2.24.9")));
+    insert!(pathExists = NixValue::Builtin(NixValueBuiltin::PathExists));
     insert!(toString = NixValue::Builtin(NixValueBuiltin::ToString));
 
     NixValue::AttrSet(builtins)
@@ -32,6 +33,7 @@ pub enum NixValueBuiltin {
     CompareVersions(Option<String>),
     GetEnv,
     Import,
+    PathExists,
     ToString,
 }
 
@@ -42,6 +44,7 @@ impl fmt::Display for NixValueBuiltin {
             NixValueBuiltin::CompareVersions(_) => "<compare_versions>",
             NixValueBuiltin::GetEnv => "<get_env>",
             NixValueBuiltin::Import => "<import>",
+            NixValueBuiltin::PathExists => "<path_exists>",
             NixValueBuiltin::ToString => "<to_string>",
         })
     }
@@ -56,6 +59,7 @@ impl NixValueBuiltin {
             CompareVersions(first_arg) => compare_versions(argument, first_arg.clone()),
             GetEnv => get_env(argument),
             Import => import(argument),
+            PathExists => path_exists(argument),
             ToString => to_string(argument),
         }
     }
@@ -159,6 +163,18 @@ pub fn import_path(path: impl AsRef<Path>) -> NixResult {
     } else {
         Ok(result)
     }
+}
+
+pub fn path_exists(argument: NixValueWrapped) -> NixResult {
+    let argument = argument.borrow();
+
+    let Some(path) = argument.as_path() else {
+        todo!("Error handling");
+    };
+
+    let exists = path.try_exists().is_ok_and(|x| x);
+
+    Ok(NixValue::Bool(exists).wrap())
 }
 
 pub fn to_string(argument: NixValueWrapped) -> NixResult {
