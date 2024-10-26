@@ -486,15 +486,28 @@ impl Scope {
                         if &str[0..1] == "/" {
                             path += str;
                         } else {
-                            if path.get(0..1) == Some("/") {
-                                path.pop();
-                            }
-
                             let dirname = self.file.path.parent().expect("Cannot get parent");
-                            path += &dirname.display().to_string();
-                            path += &str[1..];
+
+                            if str.get(1..2) == Some(".") {
+                                let Some(parent) = dirname.parent() else {
+                                    return Err(NixError::todo(
+                                        &self.file,
+                                        node.syntax().clone().into(),
+                                        "Error handling: path doesn't have parent",
+                                    ));
+                                };
+                                path += &parent.display().to_string();
+                                path += &str[2..];
+                            } else {
+                                path += &dirname.display().to_string();
+                                path += &str[1..];
+                            }
                         }
                     } else {
+                        if path.chars().rev().next() != Some('/') {
+                            path += "/";
+                        }
+
                         path += str;
                     }
                 }
