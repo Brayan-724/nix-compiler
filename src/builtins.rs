@@ -123,7 +123,6 @@ pub fn import(argument: NixValueWrapped) -> NixResult {
     let argument = argument.borrow();
 
     let path = match argument.deref() {
-        NixValue::Path(path) => path.clone(),
         NixValue::AttrSet(set) => {
             let is_flake = if let Some(ty) = set.get("_type") {
                 ty.resolve_map(|val| val.as_string() == Some("flake".to_owned()))?
@@ -145,6 +144,8 @@ pub fn import(argument: NixValueWrapped) -> NixResult {
 
             path.join("default.nix")
         }
+        NixValue::Path(path) => path.clone(),
+        NixValue::String(path) => path.into(),
         _ => todo!("Error handling"),
     };
 
