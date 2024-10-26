@@ -38,6 +38,9 @@ pub enum NixLabelMessage {
     #[error("Help: add '{0}' here")]
     AddHere(&'static str),
 
+    #[error("Assertion failed")]
+    AssertionFailed,
+
     #[error("{0}")]
     Custom(String),
 

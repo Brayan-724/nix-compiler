@@ -206,11 +206,25 @@ impl Scope {
     }
 
     pub fn visit_assert(self: &Rc<Self>, node: ast::Assert) -> NixResult {
-        Err(NixError::todo(
-            &self.file,
-            node.syntax().clone().into(),
-            "Assert expr",
-        ))
+        let condition = self.visit_expr(node.condition().unwrap())?;
+        let Some(condition) = condition.borrow().as_bool() else {
+            todo!("Error handling")
+        };
+
+        if condition {
+            node.body()
+                .map_or_else(|| Ok(NixValue::Null.wrap()), |expr| self.visit_expr(expr))
+        } else {
+            Err(NixError::from_message(
+                NixLabel::from_syntax_node(
+                    &self.file,
+                    node.condition().unwrap().syntax(),
+                    NixLabelMessage::AssertionFailed,
+                    NixLabelKind::Error,
+                ),
+                "assert failed",
+            ))
+        }
     }
 
     pub fn visit_attrset(self: &Rc<Self>, node: ast::AttrSet) -> NixResult {
