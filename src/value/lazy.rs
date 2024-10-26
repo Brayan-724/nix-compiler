@@ -10,10 +10,14 @@ use crate::NixResult;
 
 use super::{AsAttrSet, NixValueWrapped, NixVar};
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub enum LazyNixValue {
     Concrete(NixValueWrapped),
     Pending(Rc<Scope>, ast::Expr),
+    Eval(
+        Rc<Scope>,
+        Rc<RefCell<Option<Box<dyn FnOnce(Rc<Scope>) -> NixResult>>>>,
+    ),
     Resolving,
 }
 
@@ -22,6 +26,7 @@ impl fmt::Debug for LazyNixValue {
         match self {
             LazyNixValue::Concrete(value) => fmt::Debug::fmt(value.borrow().deref(), f),
             LazyNixValue::Pending(..) => f.write_str("<not-resolved>"),
+            LazyNixValue::Eval(..) => f.write_str("<not-resolved>"),
             LazyNixValue::Resolving => f.write_str("<resolving>"),
         }
     }
@@ -32,12 +37,29 @@ impl fmt::Display for LazyNixValue {
         match self {
             LazyNixValue::Concrete(value) => fmt::Display::fmt(value.borrow().deref(), f),
             LazyNixValue::Pending(..) => f.write_str("<not-resolved>"),
+            LazyNixValue::Eval(..) => f.write_str("<not-resolved>"),
             LazyNixValue::Resolving => f.write_str("<resolving>"),
         }
     }
 }
 
 impl LazyNixValue {
+    pub fn try_eq(lhs: &Rc<RefCell<Self>>, rhs: &Rc<RefCell<Self>>) -> NixResult<bool> {
+        let lhs = LazyNixValue::resolve(lhs)?;
+        let rhs = LazyNixValue::resolve(rhs)?;
+
+        let lhs = lhs.borrow();
+        let rhs = rhs.borrow();
+
+        Ok(*lhs == *rhs)
+    }
+}
+
+impl LazyNixValue {
+    pub fn new_eval(scope: Rc<Scope>, fun: Box<dyn FnOnce(Rc<Scope>) -> NixResult>) -> Self {
+        LazyNixValue::Eval(scope, Rc::new(RefCell::new(Option::Some(fun))))
+    }
+
     pub fn wrap_var(self) -> NixVar {
         NixVar(Rc::new(RefCell::new(self)))
     }
@@ -61,6 +83,16 @@ impl LazyNixValue {
             LazyNixValue::Concrete(_) => unreachable!(),
             LazyNixValue::Pending(scope, expr) => {
                 let value = scope.visit_expr(expr)?;
+
+                *this.borrow_mut().deref_mut() = LazyNixValue::Concrete(value.clone());
+
+                Ok(value)
+            }
+            LazyNixValue::Eval(scope, eval) => {
+                let value =
+                    eval.borrow_mut()
+                        .take()
+                        .expect("Eval cannot be called twice")(scope.clone())?;
 
                 *this.borrow_mut().deref_mut() = LazyNixValue::Concrete(value.clone());
 

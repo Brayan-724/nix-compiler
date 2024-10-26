@@ -7,7 +7,7 @@ use crate::NixResult;
 
 use super::{LazyNixValue, NixValue, NixValueWrapped};
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct NixVar(pub Rc<RefCell<LazyNixValue>>);
 
 impl fmt::Debug for NixVar {
@@ -22,7 +22,19 @@ impl fmt::Display for NixVar {
     }
 }
 
+impl PartialEq for NixVar {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.as_ptr() == other.0.as_ptr()
+    }
+}
+
+impl Eq for NixVar {}
+
 impl NixVar {
+    pub fn try_eq(&self, rhs: &Self) -> NixResult<bool> {
+        LazyNixValue::try_eq(&self.0, &rhs.0)
+    }
+
     pub fn as_concrete(&self) -> Option<NixValueWrapped> {
         self.0.borrow().as_concrete()
     }
