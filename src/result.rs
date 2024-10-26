@@ -2,7 +2,7 @@ use std::fmt::{self, Write};
 use std::ops::Range;
 use std::path::PathBuf;
 
-use rnix::{parser, SyntaxKind, SyntaxNode, SyntaxToken};
+use rnix::{parser, NodeOrToken, SyntaxKind, SyntaxNode, SyntaxToken};
 use thiserror::Error;
 
 use crate::value::NixValueWrapped;
@@ -30,11 +30,12 @@ pub struct NixLabel {
 pub enum NixLabelKind {
     Error,
     Help,
+    Todo,
 }
 
 #[derive(Clone, Debug, Error)]
 pub enum NixLabelMessage {
-    #[error("Help: add '\x1b[1;95m{0}\x1b[0m' here")]
+    #[error("Help: add '{0}' here")]
     AddHere(&'static str),
 
     #[error("{0}")]
@@ -52,6 +53,7 @@ impl NixLabelKind {
         match self {
             NixLabelKind::Error => "\x1b[1;91m",
             NixLabelKind::Help => "\x1b[1;96m",
+            NixLabelKind::Todo => "\x1b[1;94m",
         }
     }
 
@@ -59,6 +61,7 @@ impl NixLabelKind {
         match self {
             NixLabelKind::Error => "^",
             NixLabelKind::Help => "-",
+            NixLabelKind::Todo => "-",
         }
     }
 
@@ -66,6 +69,7 @@ impl NixLabelKind {
         match self {
             NixLabelKind::Error => "error",
             NixLabelKind::Help => "help",
+            NixLabelKind::Todo => "todo",
         }
     }
 }
@@ -166,7 +170,7 @@ impl NixError {
                     );
 
                     (
-                        format!("\x1b[1;91merror\x1b[0m: Unexpected token '{unexpected}'"),
+                        format!("Unexpected token '{unexpected}'"),
                         vec![unexpected_label, expected_label],
                     )
                 } else {
@@ -182,6 +186,24 @@ impl NixError {
         };
 
         Self { message, labels }
+    }
+
+    pub fn todo(
+        file: &FileScope,
+        node: NodeOrToken<SyntaxNode, SyntaxToken>,
+        message: impl ToString,
+    ) -> Self {
+        let message = message.to_string();
+        let label = NixLabelMessage::Custom(message.clone());
+        let kind = NixLabelKind::Todo;
+
+        Self {
+            message,
+            labels: vec![match node {
+                NodeOrToken::Node(node) => NixLabel::from_syntax_node(file, &node, label, kind),
+                NodeOrToken::Token(token) => NixLabel::from_syntax_token(file, &token, label, kind),
+            }],
+        }
     }
 }
 

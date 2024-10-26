@@ -3,6 +3,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 use rnix::ast::{self, AstToken, HasEntry};
+use rowan::ast::AstNode;
 
 use crate::{
     AsAttrSet, AsString, LazyNixValue, NixError, NixLabel, NixLabelKind, NixLabelMessage,
@@ -208,7 +209,11 @@ impl Scope {
     }
 
     pub fn visit_assert(self: &Rc<Self>, node: ast::Assert) -> NixResult {
-        todo!()
+        Err(NixError::todo(
+            &self.file,
+            node.syntax().clone().into(),
+            "Assert expr",
+        ))
     }
 
     pub fn visit_attrset(self: &Rc<Self>, node: ast::AttrSet) -> NixResult {
@@ -237,12 +242,36 @@ impl Scope {
         let lhs = self.visit_expr(node.lhs().unwrap())?;
 
         match node.operator().unwrap() {
-            ast::BinOpKind::Concat => todo!(),
-            ast::BinOpKind::Update => todo!(),
-            ast::BinOpKind::Add => todo!(),
-            ast::BinOpKind::Sub => todo!(),
-            ast::BinOpKind::Mul => todo!(),
-            ast::BinOpKind::Div => todo!(),
+            ast::BinOpKind::Concat => Err(NixError::todo(
+                &self.file,
+                node.syntax().clone().into(),
+                "Concat op",
+            )),
+            ast::BinOpKind::Update => Err(NixError::todo(
+                &self.file,
+                node.syntax().clone().into(),
+                "Update op",
+            )),
+            ast::BinOpKind::Add => Err(NixError::todo(
+                &self.file,
+                node.syntax().clone().into(),
+                "Add op",
+            )),
+            ast::BinOpKind::Sub => Err(NixError::todo(
+                &self.file,
+                node.syntax().clone().into(),
+                "Sub op",
+            )),
+            ast::BinOpKind::Mul => Err(NixError::todo(
+                &self.file,
+                node.syntax().clone().into(),
+                "Mul op",
+            )),
+            ast::BinOpKind::Div => Err(NixError::todo(
+                &self.file,
+                node.syntax().clone().into(),
+                "Div op",
+            )),
             ast::BinOpKind::And => lhs
                 .borrow()
                 .as_bool()
@@ -256,11 +285,31 @@ impl Scope {
                 .map(|rhs| rhs.borrow().deref().eq(&lhs.borrow()))
                 .map(NixValue::Bool)
                 .map(NixValue::wrap),
-            ast::BinOpKind::Implication => todo!(),
-            ast::BinOpKind::Less => todo!(),
-            ast::BinOpKind::LessOrEq => todo!(),
-            ast::BinOpKind::More => todo!(),
-            ast::BinOpKind::MoreOrEq => todo!(),
+            ast::BinOpKind::Implication => Err(NixError::todo(
+                &self.file,
+                node.syntax().clone().into(),
+                "Implication op",
+            )),
+            ast::BinOpKind::Less => Err(NixError::todo(
+                &self.file,
+                node.syntax().clone().into(),
+                "Less op",
+            )),
+            ast::BinOpKind::LessOrEq => Err(NixError::todo(
+                &self.file,
+                node.syntax().clone().into(),
+                "LessOrEq op",
+            )),
+            ast::BinOpKind::More => Err(NixError::todo(
+                &self.file,
+                node.syntax().clone().into(),
+                "More op",
+            )),
+            ast::BinOpKind::MoreOrEq => Err(NixError::todo(
+                &self.file,
+                node.syntax().clone().into(),
+                "MoreOrEq op",
+            )),
             ast::BinOpKind::NotEqual => self
                 .visit_expr(node.rhs().unwrap())
                 .map(|rhs| rhs.borrow().deref().ne(&lhs.borrow()))
@@ -279,7 +328,11 @@ impl Scope {
     }
 
     pub fn visit_error(self: &Rc<Self>, node: ast::Error) -> NixResult {
-        todo!()
+        Err(NixError::todo(
+            &self.file,
+            node.syntax().clone().into(),
+            "Error Expr",
+        ))
     }
 
     pub fn visit_hasattr(self: &Rc<Self>, node: ast::HasAttr) -> NixResult {
@@ -344,7 +397,7 @@ impl Scope {
     }
 
     pub fn visit_legacylet(self: &Rc<Self>, node: ast::LegacyLet) -> NixResult {
-        todo!()
+        unimplemented!("This is legacy")
     }
 
     pub fn visit_letin(self: &Rc<Self>, node: ast::LetIn) -> NixResult {
@@ -368,9 +421,17 @@ impl Scope {
 
     pub fn visit_literal(self: &Rc<Self>, node: ast::Literal) -> NixResult {
         match node.kind() {
-            ast::LiteralKind::Float(_) => todo!(),
+            ast::LiteralKind::Float(_) => Err(NixError::todo(
+                &self.file,
+                node.syntax().clone().into(),
+                "Float literal",
+            )),
             ast::LiteralKind::Integer(value) => Ok(NixValue::Int(value.value().unwrap()).wrap()),
-            ast::LiteralKind::Uri(_) => todo!(),
+            ast::LiteralKind::Uri(_) => Err(NixError::todo(
+                &self.file,
+                node.syntax().clone().into(),
+                "Uri literal",
+            )),
         }
     }
 
@@ -465,7 +526,11 @@ impl Scope {
 
                 Ok(NixValue::Bool(!value).wrap())
             }
-            ast::UnaryOpKind::Negate => todo!(),
+            ast::UnaryOpKind::Negate => Err(NixError::todo(
+                &self.file,
+                node.syntax().clone().into(),
+                "Negate op",
+            )),
         }
     }
 

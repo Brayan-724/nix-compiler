@@ -239,7 +239,7 @@ impl NixValue {
         match self {
             NixValue::Path(path) => Some(path.to_path_buf()),
             NixValue::String(string) => Some(PathBuf::from(string)),
-_ => None
+            _ => None,
         }
     }
 }
