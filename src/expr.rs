@@ -304,11 +304,14 @@ impl Scope {
                 .map(|rhs| rhs.borrow().deref().eq(&lhs.borrow()))
                 .map(NixValue::Bool)
                 .map(NixValue::wrap),
-            ast::BinOpKind::Implication => Err(NixError::todo(
-                &self.file,
-                node.syntax().clone().into(),
-                "Implication op",
-            )),
+            ast::BinOpKind::Implication => lhs
+                .borrow()
+                .as_bool()
+                .ok_or_else(|| todo!("Error handling"))
+                .and_then(|lhs| {
+                    lhs.then(|| self.visit_expr(node.rhs().unwrap()))
+                        .unwrap_or_else(|| Ok(NixValue::Bool(true).wrap()))
+                }),
             ast::BinOpKind::Less => Err(NixError::todo(
                 &self.file,
                 node.syntax().clone().into(),
