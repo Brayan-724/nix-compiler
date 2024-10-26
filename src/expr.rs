@@ -258,11 +258,24 @@ impl Scope {
                 node.syntax().clone().into(),
                 "Concat op",
             )),
-            ast::BinOpKind::Update => Err(NixError::todo(
-                &self.file,
-                node.syntax().clone().into(),
-                "Update op",
-            )),
+            ast::BinOpKind::Update => lhs
+                .borrow()
+                .as_attr_set()
+                .cloned()
+                .ok_or_else(|| todo!("Error handling"))
+                .and_then(|mut lhs| {
+                    self.visit_expr(node.rhs().unwrap()).and_then(|rhs| {
+                        rhs.borrow()
+                            .as_attr_set()
+                            .ok_or_else(|| todo!("Error handling"))
+                            .map(|rhs| {
+                                rhs.into_iter().for_each(|(key, value)| {
+                                    lhs.insert(key.clone(), value.clone());
+                                });
+                            })
+                            .map(|_| NixValue::AttrSet(lhs).wrap())
+                    })
+                }),
             ast::BinOpKind::Add => match lhs.borrow().deref() {
                 NixValue::String(lhs) => self
                     .visit_expr(node.rhs().unwrap())?
