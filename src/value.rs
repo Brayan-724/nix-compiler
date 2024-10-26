@@ -235,6 +235,14 @@ impl NixValue {
         }
     }
 
+    pub fn as_list(&self) -> Option<&Vec<NixVar>> {
+        if let NixValue::List(list) = self {
+            Some(list)
+        } else {
+            None
+        }
+    }
+
     pub fn as_path(&self) -> Option<PathBuf> {
         match self {
             NixValue::Path(path) => Some(path.to_path_buf()),

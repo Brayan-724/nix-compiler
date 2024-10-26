@@ -15,12 +15,12 @@ pub struct FileScope {
 impl FileScope {
     pub fn from_path(path: impl AsRef<Path>) -> Rc<Self> {
         let mut path = path
-                .as_ref()
-                .to_path_buf()
-                .canonicalize()
-                .expect("File path is already found");
+            .as_ref()
+            .to_path_buf()
+            .canonicalize()
+            .expect("File path is already found");
 
-         if path.is_dir() {
+        if path.is_dir() {
             path.push("default.nix")
         }
 

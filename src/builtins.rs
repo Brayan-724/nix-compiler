@@ -8,7 +8,9 @@ use std::rc::Rc;
 use rnix::ast;
 
 use crate::flake::resolve_flake;
-use crate::{AsString, FileScope, LazyNixValue, NixResult, NixValue, NixValueWrapped, Scope};
+use crate::{
+    AsAttrSet, AsString, FileScope, LazyNixValue, NixResult, NixValue, NixValueWrapped, Scope,
+};
 
 pub fn get_builtins() -> NixValue {
     let mut builtins = HashMap::new();
@@ -25,6 +27,7 @@ pub fn get_builtins() -> NixValue {
     insert!(import = NixValue::Builtin(NixValueBuiltin::Import));
     insert!(nixVersion = NixValue::String(String::from("2.24.9")));
     insert!(pathExists = NixValue::Builtin(NixValueBuiltin::PathExists));
+    insert!(removeAttrs = NixValue::Builtin(NixValueBuiltin::RemoveAttrs(None)));
     insert!(toString = NixValue::Builtin(NixValueBuiltin::ToString));
     insert!(tryEval = NixValue::Builtin(NixValueBuiltin::TryEval));
 
@@ -38,6 +41,7 @@ pub enum NixValueBuiltin {
     GetEnv,
     Import,
     PathExists,
+    RemoveAttrs(Option<(Rc<Scope>, ast::Expr)>),
     ToString,
     TryEval,
 }
@@ -46,12 +50,13 @@ impl fmt::Display for NixValueBuiltin {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             NixValueBuiltin::Abort => "<abort>",
-            NixValueBuiltin::CompareVersions(_) => "<compare_versions>",
-            NixValueBuiltin::GetEnv => "<get_env>",
+            NixValueBuiltin::CompareVersions(..) => "<compareVersions>",
+            NixValueBuiltin::GetEnv => "<getEnv>",
             NixValueBuiltin::Import => "<import>",
-            NixValueBuiltin::PathExists => "<path_exists>",
-            NixValueBuiltin::ToString => "<to_string>",
-            NixValueBuiltin::TryEval => "<try_eval>",
+            NixValueBuiltin::PathExists => "<pathExists>",
+            NixValueBuiltin::RemoveAttrs(..) => "<removeAttrs>",
+            NixValueBuiltin::ToString => "<toString>",
+            NixValueBuiltin::TryEval => "<tryEval>",
         })
     }
 }
@@ -68,6 +73,13 @@ impl NixValueBuiltin {
             GetEnv => get_env(scope.visit_expr(argument)?),
             Import => import(scope.visit_expr(argument)?),
             PathExists => path_exists(scope.visit_expr(argument)?),
+            RemoveAttrs(Some((scope, expr))) => {
+                let first_arg = scope.visit_expr(expr.clone())?;
+                remove_attrs(scope.visit_expr(argument)?, first_arg)
+            }
+            RemoveAttrs(None) => {
+                Ok(NixValue::Builtin(NixValueBuiltin::RemoveAttrs(Some((scope, argument)))).wrap())
+            }
             ToString => to_string(scope.visit_expr(argument)?),
             TryEval => try_eval(scope, argument),
         }
@@ -185,6 +197,33 @@ pub fn path_exists(argument: NixValueWrapped) -> NixResult {
     let exists = path.try_exists().is_ok_and(|x| x);
 
     Ok(NixValue::Bool(exists).wrap())
+}
+
+pub fn remove_attrs(argument: NixValueWrapped, first_arg: NixValueWrapped) -> NixResult {
+    if !first_arg.borrow().is_attr_set() {
+        todo!("Error handling")
+    }
+
+    let mut first_arg = first_arg.borrow().as_attr_set().unwrap().clone();
+
+    let attrs = argument.borrow();
+    let Some(attrs) = attrs.as_list() else {
+        todo!("Error handling")
+    };
+
+    let attrs = attrs
+        .into_iter()
+        .map(|attr| {
+            attr.resolve()
+                .map(|attr| attr.borrow().as_string().unwrap())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    for attr in attrs {
+        first_arg.remove(&attr);
+    }
+
+    Ok(NixValue::AttrSet(first_arg).wrap())
 }
 
 pub fn to_string(argument: NixValueWrapped) -> NixResult {
