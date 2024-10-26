@@ -3,9 +3,12 @@ use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::ops::Deref;
 use std::path::Path;
+use std::rc::Rc;
+
+use rnix::ast;
 
 use crate::flake::resolve_flake;
-use crate::{AsString, FileScope, NixResult, NixValue, NixValueWrapped};
+use crate::{AsString, FileScope, LazyNixValue, NixResult, NixValue, NixValueWrapped, Scope};
 
 pub fn get_builtins() -> NixValue {
     let mut builtins = HashMap::new();
@@ -23,6 +26,7 @@ pub fn get_builtins() -> NixValue {
     insert!(nixVersion = NixValue::String(String::from("2.24.9")));
     insert!(pathExists = NixValue::Builtin(NixValueBuiltin::PathExists));
     insert!(toString = NixValue::Builtin(NixValueBuiltin::ToString));
+    insert!(tryEval = NixValue::Builtin(NixValueBuiltin::TryEval));
 
     NixValue::AttrSet(builtins)
 }
@@ -35,6 +39,7 @@ pub enum NixValueBuiltin {
     Import,
     PathExists,
     ToString,
+    TryEval,
 }
 
 impl fmt::Display for NixValueBuiltin {
@@ -46,21 +51,25 @@ impl fmt::Display for NixValueBuiltin {
             NixValueBuiltin::Import => "<import>",
             NixValueBuiltin::PathExists => "<path_exists>",
             NixValueBuiltin::ToString => "<to_string>",
+            NixValueBuiltin::TryEval => "<try_eval>",
         })
     }
 }
 
 impl NixValueBuiltin {
-    pub fn run(&self, argument: NixValueWrapped) -> NixResult {
+    pub fn run(&self, scope: Rc<Scope>, argument: ast::Expr) -> NixResult {
         use NixValueBuiltin::*;
 
         match self {
-            Abort => abort(argument),
-            CompareVersions(first_arg) => compare_versions(argument, first_arg.clone()),
-            GetEnv => get_env(argument),
-            Import => import(argument),
-            PathExists => path_exists(argument),
-            ToString => to_string(argument),
+            Abort => abort(scope.visit_expr(argument)?),
+            CompareVersions(first_arg) => {
+                compare_versions(scope.visit_expr(argument)?, first_arg.clone())
+            }
+            GetEnv => get_env(scope.visit_expr(argument)?),
+            Import => import(scope.visit_expr(argument)?),
+            PathExists => path_exists(scope.visit_expr(argument)?),
+            ToString => to_string(scope.visit_expr(argument)?),
+            TryEval => try_eval(scope, argument),
         }
     }
 }
@@ -186,4 +195,21 @@ pub fn to_string(argument: NixValueWrapped) -> NixResult {
     };
 
     Ok(NixValue::String(message).wrap())
+}
+
+pub fn try_eval(scope: Rc<Scope>, node: ast::Expr) -> NixResult {
+    let Ok(argument) = scope.visit_expr(node) else {
+        let mut result = HashMap::new();
+        result.insert("success".to_string(), NixValue::Bool(false).wrap_var());
+        return Ok(NixValue::AttrSet(result).wrap());
+    };
+
+    let mut result = HashMap::new();
+    result.insert("success".to_string(), NixValue::Bool(true).wrap_var());
+    result.insert(
+        "value".to_string(),
+        LazyNixValue::Concrete(argument).wrap_var(),
+    );
+
+    return Ok(NixValue::AttrSet(result).wrap());
 }

@@ -122,17 +122,13 @@ impl Scope {
         let lambda = lambda.borrow();
 
         match lambda.deref() {
-            NixValue::Builtin(builtin) => {
-                let argument = self.visit_expr(node.argument().unwrap())?;
-                builtin.run(argument)
-            }
+            NixValue::Builtin(builtin) => builtin.run(self.clone(), node.argument().unwrap()),
             NixValue::Lambda(scope, param, expr) => {
-                let argument_var = self.visit_expr(node.argument().unwrap())?;
-
                 let scope = scope.clone().new_child();
 
                 match param {
                     NixLambdaParam::Pattern(pattern) => {
+                        let argument_var = self.visit_expr(node.argument().unwrap())?;
                         let argument = argument_var.borrow();
                         let Some(argument) = argument.as_attr_set() else {
                             todo!("Error handling")
@@ -193,7 +189,8 @@ impl Scope {
                             scope
                                 .set_variable(
                                     param.clone(),
-                                    LazyNixValue::Concrete(argument_var).wrap_var()
+                                    LazyNixValue::Pending(self.clone(), node.argument().unwrap())
+                                        .wrap_var()
                                 )
                                 .is_none(),
                             "Variable {param} already exists"
