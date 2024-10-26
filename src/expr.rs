@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -47,49 +48,93 @@ impl Scope {
     ) -> NixResult {
         match entry {
             ast::Entry::Inherit(entry) => {
-                let from = entry
-                    .from()
-                    .map(|from| self.visit_expr(from.expr().unwrap()));
-
-                let from = if let Some(from) = from {
-                    Some(from?)
-                } else {
-                    None
-                };
+                let from = entry.from().map(|from| {
+                    (
+                        LazyNixValue::Pending(self.clone(), from.expr().unwrap()).wrap_var(),
+                        from,
+                    )
+                });
 
                 for attr_node in entry.attrs() {
                     let attr = self.resolve_attr(&attr_node)?;
 
-                    if let Some(from) = &from {
-                        let from = from
-                            .borrow()
-                            .as_attr_set()
-                            .unwrap()
-                            .get(&attr)
-                            .cloned()
-                            .unwrap();
+                    if let Some((from, from_expr)) = &from {
+                        let value = {
+                            let from = from.clone();
+                            let from_expr = from_expr.clone();
+                            let attr = attr.clone();
+                            let attr_node = attr_node.clone();
+                            let file = self.file.clone();
 
-                        out.borrow_mut()
-                            .as_attr_set_mut()
-                            .unwrap()
-                            .insert(attr, from);
-                    } else {
-                        let Some(value) = self.get_variable(attr.clone()) else {
-                            return Err(NixError::from_message(
-                                NixLabel::from_syntax_node(
-                                    &self.file,
-                                    attr_node.syntax(),
-                                    NixLabelMessage::VariableNotFound,
-                                    NixLabelKind::Error,
-                                ),
-                                format!("Variable '{attr} not found"),
-                            ));
+                            LazyNixValue::new_eval(
+                                self.clone(),
+                                Box::new(move |scope| {
+                                    from.resolve()?
+                                        .borrow()
+                                        .as_attr_set()
+                                        .unwrap()
+                                        .get(&attr)
+                                        .cloned()
+                                        .ok_or_else(|| NixError {
+                                            message: format!(
+                                                "Attribute '\x1b[1;95m{attr}\x1b[0m' missing"
+                                            ),
+                                            labels: vec![
+                                                NixLabel::from_syntax_node(
+                                                    &file,
+                                                    attr_node.syntax(),
+                                                    NixLabelMessage::VariableNotFound,
+                                                    NixLabelKind::Error,
+                                                ),
+                                                NixLabel::from_syntax_node(
+                                                    &file,
+                                                    from_expr.syntax(),
+                                                    NixLabelMessage::Custom(
+                                                        "Parent attrset".to_owned(),
+                                                    ),
+                                                    NixLabelKind::Help,
+                                                ),
+                                            ],
+                                        })?
+                                        .resolve()
+                                }),
+                            )
                         };
 
                         out.borrow_mut()
                             .as_attr_set_mut()
                             .unwrap()
-                            .insert(attr, value);
+                            .insert(attr, value.wrap_var());
+                    } else {
+                        let value = {
+                            let attr = attr.clone();
+                            let attr_node = attr_node.clone();
+                            let file = self.file.clone();
+
+                            LazyNixValue::new_eval(
+                                self.clone(),
+                                Box::new(move |scope| {
+                                    let Some(value) = scope.get_variable(attr.clone()) else {
+                                        return Err(NixError::from_message(
+                                            NixLabel::from_syntax_node(
+                                                &file,
+                                                attr_node.syntax(),
+                                                NixLabelMessage::VariableNotFound,
+                                                NixLabelKind::Error,
+                                            ),
+                                            format!("Variable '{attr} not found"),
+                                        ));
+                                    };
+
+                                    value.resolve()
+                                }),
+                            )
+                        };
+
+                        out.borrow_mut()
+                            .as_attr_set_mut()
+                            .unwrap()
+                            .insert(attr, value.wrap_var());
                     }
                 }
 
