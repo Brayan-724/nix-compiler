@@ -243,37 +243,38 @@ impl Scope {
             ast::BinOpKind::Sub => todo!(),
             ast::BinOpKind::Mul => todo!(),
             ast::BinOpKind::Div => todo!(),
-            ast::BinOpKind::And => todo!(),
-            ast::BinOpKind::Equal => {
-                let rhs = self.visit_expr(node.rhs().unwrap())?;
-
-                let are_equal = lhs.borrow().deref() == rhs.borrow().deref();
-
-                Ok(NixValue::Bool(are_equal).wrap())
-            }
+            ast::BinOpKind::And => lhs
+                .borrow()
+                .as_bool()
+                .ok_or_else(|| todo!("Error handling"))
+                .and_then(|lhs| {
+                    lhs.then(|| self.visit_expr(node.rhs().unwrap()))
+                        .unwrap_or_else(|| Ok(NixValue::Bool(false).wrap()))
+                }),
+            ast::BinOpKind::Equal => self
+                .visit_expr(node.rhs().unwrap())
+                .map(|rhs| rhs.borrow().deref().eq(&lhs.borrow()))
+                .map(NixValue::Bool)
+                .map(NixValue::wrap),
             ast::BinOpKind::Implication => todo!(),
             ast::BinOpKind::Less => todo!(),
             ast::BinOpKind::LessOrEq => todo!(),
             ast::BinOpKind::More => todo!(),
             ast::BinOpKind::MoreOrEq => todo!(),
-            ast::BinOpKind::NotEqual => {
-                let rhs = self.visit_expr(node.rhs().unwrap())?;
-
-                let are_not_equal = *lhs.borrow() != *rhs.borrow();
-
-                Ok(NixValue::Bool(are_not_equal).wrap())
-            }
-            ast::BinOpKind::Or => {
-                let Some(lhs_value) = lhs.borrow().as_bool() else {
-                    todo!("Error handling");
-                };
-
-                if lhs_value {
-                    Ok(lhs)
-                } else {
-                    self.visit_expr(node.rhs().unwrap())
-                }
-            }
+            ast::BinOpKind::NotEqual => self
+                .visit_expr(node.rhs().unwrap())
+                .map(|rhs| rhs.borrow().deref().ne(&lhs.borrow()))
+                .map(NixValue::Bool)
+                .map(NixValue::wrap),
+            ast::BinOpKind::Or => lhs
+                .borrow()
+                .as_bool()
+                .ok_or_else(|| todo!("Error handling"))
+                .and_then(|lhs| {
+                    (!lhs)
+                        .then(|| self.visit_expr(node.rhs().unwrap()))
+                        .unwrap_or_else(|| Ok(NixValue::Bool(true).wrap()))
+                }),
         }
     }
 

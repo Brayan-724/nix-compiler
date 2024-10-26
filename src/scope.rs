@@ -10,7 +10,8 @@ pub use file::FileScope;
 
 use crate::result::{NixLabel, NixLabelKind, NixLabelMessage};
 use crate::{
-    builtins, AsAttrSet, AsString, NixError, NixResult, NixValue, NixValueBuiltin, NixValueWrapped, NixVar
+    builtins, AsAttrSet, AsString, NixError, NixResult, NixValue, NixValueBuiltin, NixValueWrapped,
+    NixVar,
 };
 
 #[derive(Debug, PartialEq, Eq)]
