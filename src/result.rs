@@ -108,22 +108,27 @@ impl fmt::Display for NixError {
         f.write_str(&line_padding)?;
         f.write_str(" | \x1b[0m")?;
 
-        let mut last_line = labels.first().unwrap().line;
+        let mut last_line = usize::MAX;
 
         for label in &labels {
-            if label.line.abs_diff(last_line) >= 2 {
+            if last_line != usize::MAX && label.line.abs_diff(last_line) >= 2 {
                 f.write_char('\n')?;
                 f.write_str(&dots)?;
                 f.write_str(" |")?;
             }
 
+            if label.line != last_line {
+                f.write_fmt(format_args!(
+                    "\n\x1b[1;34m{line:0>max_line_width$} | \x1b[0m{context}",
+                    line = label.line,
+                    context = label.context,
+                ))?;
+            }
+
             last_line = label.line;
 
             f.write_fmt(format_args!(
-                "\n\x1b[1;34m{line:0>max_line_width$} | \x1b[0m{context}\
-                 \n\x1b[1;34m{line_padding} | \x1b[0m{spaces}{color}{arrow} {label}\x1b[0m",
-                line = label.line,
-                context = label.context,
+                "\n\x1b[1;34m{line_padding} | \x1b[0m{spaces}{color}{arrow} {label}\x1b[0m",
                 spaces = " ".repeat(label.range.start),
                 color = label.kind.color(),
                 arrow = label.kind.symbol().repeat(label.range.len()),

@@ -1,3 +1,1 @@
-{
-  hello-world = "Needs semicolon"
-}
+{ hello-world = "Needs semicolon" }
