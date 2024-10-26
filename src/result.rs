@@ -41,6 +41,9 @@ pub enum NixLabelMessage {
     #[error("Assertion failed")]
     AssertionFailed,
 
+    #[error("Attribute missing")]
+    AttributeMissing,
+
     #[error("{0}")]
     Custom(String),
 

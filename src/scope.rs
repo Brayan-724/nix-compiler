@@ -106,7 +106,7 @@ impl Scope {
             let label = NixLabel::from_syntax_node(
                 &self.file,
                 last_attr.syntax(),
-                NixLabelMessage::VariableNotFound,
+                NixLabelMessage::AttributeMissing,
                 NixLabelKind::Error,
             );
             NixError::from_message(

@@ -83,7 +83,7 @@ impl Scope {
                                                 NixLabel::from_syntax_node(
                                                     &file,
                                                     attr_node.syntax(),
-                                                    NixLabelMessage::VariableNotFound,
+                                                    NixLabelMessage::AttributeMissing,
                                                     NixLabelKind::Error,
                                                 ),
                                                 NixLabel::from_syntax_node(
