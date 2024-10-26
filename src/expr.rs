@@ -252,11 +252,19 @@ impl Scope {
                 node.syntax().clone().into(),
                 "Update op",
             )),
-            ast::BinOpKind::Add => Err(NixError::todo(
-                &self.file,
-                node.syntax().clone().into(),
-                "Add op",
-            )),
+            ast::BinOpKind::Add => match lhs.borrow().deref() {
+                NixValue::String(lhs) => self
+                    .visit_expr(node.rhs().unwrap())?
+                    .borrow()
+                    .as_string()
+                    .ok_or_else(|| todo!("Error handling"))
+                    .map(|rhs| NixValue::String(format!("{lhs}{rhs}")).wrap()),
+                _ => Err(NixError::todo(
+                    &self.file,
+                    node.syntax().clone().into(),
+                    "Cannot add",
+                )),
+            },
             ast::BinOpKind::Sub => Err(NixError::todo(
                 &self.file,
                 node.syntax().clone().into(),
