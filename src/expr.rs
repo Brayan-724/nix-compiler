@@ -29,7 +29,7 @@ impl Scope {
             todo!("Error handling")
         };
 
-        let attr = self.resolve_attr(last_attr_path)?;
+        let attr = self.resolve_attr(&last_attr_path)?;
         let child = LazyNixValue::Pending(self.clone().new_child(), attr_value).wrap_var();
 
         let mut target = target.borrow_mut();
@@ -57,8 +57,8 @@ impl Scope {
                     None
                 };
 
-                for attr in entry.attrs() {
-                    let attr = self.resolve_attr(attr)?;
+                for attr_node in entry.attrs() {
+                    let attr = self.resolve_attr(&attr_node)?;
 
                     if let Some(from) = &from {
                         let from = from
@@ -74,7 +74,17 @@ impl Scope {
                             .unwrap()
                             .insert(attr, from);
                     } else {
-                        let value = self.get_variable(attr.clone()).unwrap();
+                        let Some(value) = self.get_variable(attr.clone()) else {
+                            return Err(NixError::from_message(
+                                NixLabel::from_syntax_node(
+                                    &self.file,
+                                    attr_node.syntax(),
+                                    NixLabelMessage::VariableNotFound,
+                                    NixLabelKind::Error,
+                                ),
+                                format!("Variable '{attr} not found"),
+                            ));
+                        };
 
                         out.borrow_mut()
                             .as_attr_set_mut()

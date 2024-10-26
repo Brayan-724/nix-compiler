@@ -98,7 +98,7 @@ impl Scope {
 
         let attr_set = self.resolve_attr_set_path(value, attrs.into_iter())?;
 
-        let attr = self.resolve_attr(last_attr.clone())?;
+        let attr = self.resolve_attr(&last_attr)?;
 
         let attr_set = attr_set.borrow();
 
@@ -122,7 +122,7 @@ impl Scope {
         mut attr_path: impl Iterator<Item = ast::Attr>,
     ) -> NixResult {
         if let Some(attr) = attr_path.next() {
-            let attr = self.resolve_attr(attr)?;
+            let attr = self.resolve_attr(&attr)?;
 
             let set_value = value.borrow().get(&attr).unwrap();
 
@@ -147,7 +147,7 @@ impl Scope {
         }
     }
 
-    pub fn resolve_attr(self: &Rc<Self>, attr: ast::Attr) -> NixResult<String> {
+    pub fn resolve_attr(self: &Rc<Self>, attr: &ast::Attr) -> NixResult<String> {
         match attr {
             ast::Attr::Ident(ident) => Ok(ident.ident_token().unwrap().text().to_owned()),
             ast::Attr::Dynamic(dynamic) => Ok(self
