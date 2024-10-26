@@ -244,6 +244,8 @@ impl NixLabel {
                 continue;
             };
 
+            let size = size.min(next_newline - last_newline - column);
+
             let context = file.content[last_newline..next_newline].to_owned();
 
             break Self {
