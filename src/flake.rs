@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{builtins, AsAttrSet, LazyNixValue, NixResult, NixValue, NixValueWrapped};
+use crate::{AsAttrSet, LazyNixValue, NixResult, NixValue, NixValueWrapped, Scope};
 
 pub fn resolve_flake(result: NixValueWrapped) -> NixResult {
     let result = result.borrow();
@@ -42,7 +42,7 @@ pub fn resolve_flake(result: NixValueWrapped) -> NixResult {
 
         let flake_path = path.join("flake.nix");
 
-        let flake = builtins::import_path(flake_path)?;
+        let flake = Scope::import_path(flake_path)?;
 
         let mut out = HashMap::new();
 

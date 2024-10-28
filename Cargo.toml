@@ -1,9 +1,16 @@
+[workspace]
+members = [
+  "crates/macros"
+]
+
 [package]
 name = "nix-compiler"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+nix-macros = { path = "./crates/macros/" }
+
 # Parser
 rnix = "0.11.0"
 rowan = "0.15.0" # Ast interaction with rnix

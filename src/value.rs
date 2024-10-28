@@ -13,7 +13,7 @@ pub use var::NixVar;
 
 use rnix::ast;
 
-use crate::builtins::NixValueBuiltin;
+use crate::builtins::NixBuiltin;
 use crate::scope::Scope;
 
 #[derive(Clone, PartialEq, Eq)]
@@ -23,12 +23,12 @@ pub enum NixLambdaParam {
 }
 
 /// https://nix.dev/manual/nix/2.24/language/types
-#[derive(Clone, Default, PartialEq, Eq)]
+#[derive(Default, PartialEq, Eq)]
 pub enum NixValue {
     AttrSet(HashMap<String, NixVar>),
     Bool(bool),
     /// https://nix.dev/manual/nix/2.24/language/builtins
-    Builtin(NixValueBuiltin),
+    Builtin(Rc<Box<dyn NixBuiltin>>),
     Int(i64),
     Lambda(Rc<Scope>, NixLambdaParam, ast::Expr),
     List(Vec<NixVar>),
@@ -133,7 +133,7 @@ impl fmt::Display for NixValue {
             }
             NixValue::Bool(true) => f.write_str("true"),
             NixValue::Bool(false) => f.write_str("false"),
-            NixValue::Builtin(builtin) => fmt::Display::fmt(builtin, f),
+            NixValue::Builtin(builtin) => fmt::Display::fmt(&builtin, f),
             NixValue::Int(val) => f.write_str(&val.to_string()),
             NixValue::Lambda(..) => f.write_str("<lamda>"),
             NixValue::List(list) => {

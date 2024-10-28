@@ -1,6 +1,8 @@
 mod file;
 
 use std::collections::HashMap;
+use std::ffi::OsStr;
+use std::path::Path;
 use std::rc::Rc;
 
 use rnix::ast;
@@ -10,8 +12,7 @@ pub use file::FileScope;
 
 use crate::result::{NixLabel, NixLabelKind, NixLabelMessage};
 use crate::{
-    builtins, AsAttrSet, AsString, NixError, NixResult, NixValue, NixValueBuiltin, NixValueWrapped,
-    NixVar,
+    builtins, flake, AsAttrSet, AsString, NixError, NixResult, NixValue, NixValueWrapped, NixVar,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -32,9 +33,9 @@ impl Scope {
         let mut globals = HashMap::new();
         let builtins = builtins::get_builtins();
 
-        insert!(globals; abort = NixValue::Builtin(NixValueBuiltin::Abort));
-        insert!(globals; import = NixValue::Builtin(NixValueBuiltin::Import));
-        insert!(globals; toString = NixValue::Builtin(NixValueBuiltin::ToString));
+        insert!(globals; abort = builtins::Abort::generate());
+        insert!(globals; import = builtins::Import::generate());
+        insert!(globals; toString = builtins::ToString::generate());
         insert!(globals; builtins = builtins);
 
         let parent = Rc::new(Scope {
@@ -86,6 +87,20 @@ impl Scope {
                     .as_ref()
                     .and_then(|parent| parent.get_variable(varname))
             })
+    }
+
+    pub fn import_path(path: impl AsRef<Path>) -> NixResult {
+        let path = path.as_ref();
+
+        println!("Importing {path:#?}");
+
+        let result = FileScope::from_path(path).evaluate()?;
+
+        if path.file_name() == Some(OsStr::new("flake.nix")) {
+            flake::resolve_flake(result)
+        } else {
+            Ok(result)
+        }
     }
 
     pub fn resolve_attr_path<'a>(
