@@ -22,6 +22,12 @@ pub enum NixLambdaParam {
     Pattern(ast::Pattern),
 }
 
+#[derive(Clone, PartialEq, Eq)]
+pub struct NixLambda(pub Rc<Scope>, pub NixLambdaParam, pub ast::Expr);
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct NixList(pub Rc<Vec<NixVar>>);
+
 /// https://nix.dev/manual/nix/2.24/language/types
 #[derive(Default, PartialEq, Eq)]
 pub enum NixValue {
@@ -30,8 +36,8 @@ pub enum NixValue {
     /// https://nix.dev/manual/nix/2.24/language/builtins
     Builtin(Rc<Box<dyn NixBuiltin>>),
     Int(i64),
-    Lambda(Rc<Scope>, NixLambdaParam, ast::Expr),
-    List(Vec<NixVar>),
+    Lambda(NixLambda),
+    List(NixList),
     #[default]
     Null,
     Path(PathBuf),
@@ -60,7 +66,7 @@ impl fmt::Debug for NixValue {
             NixValue::List(list) => {
                 let mut debug_list = f.debug_list();
 
-                for item in list {
+                for item in &*list.0 {
                     debug_list.entry(item);
                 }
 
@@ -149,7 +155,7 @@ impl fmt::Display for NixValue {
                     f.write_char('\n')?;
                 }
 
-                for value in list {
+                for value in &*list.0 {
                     let value = value.resolve().unwrap();
                     let value = value.as_ref().borrow();
                     let value = value.deref();
@@ -227,17 +233,17 @@ impl NixValue {
         }
     }
 
-    pub fn as_lambda(&self) -> Option<(Rc<Scope>, &NixLambdaParam, &ast::Expr)> {
-        if let NixValue::Lambda(scope, param, expr) = self {
-            Some((scope.clone(), param, expr))
+    pub fn as_lambda(&self) -> Option<&NixLambda> {
+        if let NixValue::Lambda(lambda) = self {
+            Some(lambda)
         } else {
             None
         }
     }
 
-    pub fn as_list(&self) -> Option<&Vec<NixVar>> {
+    pub fn as_list(&self) -> Option<NixList> {
         if let NixValue::List(list) = self {
-            Some(list)
+            Some(list.clone())
         } else {
             None
         }

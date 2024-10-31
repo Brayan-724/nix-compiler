@@ -5,6 +5,8 @@ use std::rc::Rc;
 use rnix::ast::{self, AstToken, HasEntry};
 use rowan::ast::AstNode;
 
+use crate::result::NixSpan;
+use crate::value::{NixLambda, NixList};
 use crate::{
     AsAttrSet, AsString, LazyNixValue, NixError, NixLabel, NixLabelKind, NixLabelMessage,
     NixLambdaParam, NixResult, NixValue, NixValueWrapped, Scope,
@@ -30,6 +32,30 @@ impl Scope {
         };
 
         let attr = self.resolve_attr(&last_attr_path)?;
+
+        // if attr.starts_with("crossSystem") {
+        //     println!(
+        //         "{}",
+        //         NixError {
+        //             labels: vec![
+        //                 NixLabel::from_syntax_node(
+        //                     &self.file,
+        //                     attrpath.syntax(),
+        //                     NixLabelMessage::Custom(attr.clone()),
+        //                     NixLabelKind::Help
+        //                 ),
+        //                 NixLabel::from_syntax_node(
+        //                     &self.file,
+        //                     attr_value.syntax(),
+        //                     NixLabelMessage::Custom(attr.clone()),
+        //                     NixLabelKind::Help
+        //                 ),
+        //             ],
+        //             message: format!("Tracing insert_to_attrset: {:#?}", self)
+        //         }
+        //     );
+        // }
+
         let child = LazyNixValue::Pending(self.clone().new_child(), attr_value).wrap_var();
 
         let mut target = target.borrow_mut();
@@ -67,6 +93,7 @@ impl Scope {
 
                             LazyNixValue::new_eval(
                                 self.clone(),
+                                from_expr.syntax().clone(),
                                 Box::new(move |scope| {
                                     from.resolve()?
                                         .borrow()
@@ -79,21 +106,22 @@ impl Scope {
                                                 "Attribute '\x1b[1;95m{attr}\x1b[0m' missing"
                                             ),
                                             labels: vec![
-                                                NixLabel::from_syntax_node(
-                                                    &file,
-                                                    attr_node.syntax(),
+                                                NixLabel::new(
+                                                    NixSpan::from_ast_node(&file, &attr_node)
+                                                        .into(),
                                                     NixLabelMessage::AttributeMissing,
                                                     NixLabelKind::Error,
                                                 ),
-                                                NixLabel::from_syntax_node(
-                                                    &file,
-                                                    from_expr.syntax(),
+                                                NixLabel::new(
+                                                    NixSpan::from_ast_node(&file, &from_expr)
+                                                        .into(),
                                                     NixLabelMessage::Custom(
                                                         "Parent attrset".to_owned(),
                                                     ),
                                                     NixLabelKind::Help,
                                                 ),
                                             ],
+                                            backtrace: None,
                                         })?
                                         .resolve()
                                 }),
@@ -112,12 +140,12 @@ impl Scope {
 
                             LazyNixValue::new_eval(
                                 self.clone(),
+                                attr_node.syntax().clone(),
                                 Box::new(move |scope| {
                                     let Some(value) = scope.get_variable(attr.clone()) else {
                                         return Err(NixError::from_message(
-                                            NixLabel::from_syntax_node(
-                                                &file,
-                                                attr_node.syntax(),
+                                            NixLabel::new(
+                                                NixSpan::from_ast_node(&file, &attr_node).into(),
                                                 NixLabelMessage::VariableNotFound,
                                                 NixLabelKind::Error,
                                             ),
@@ -177,7 +205,7 @@ impl Scope {
 
         match lambda.deref() {
             NixValue::Builtin(builtin) => builtin.run(self.clone(), node.argument().unwrap()),
-            NixValue::Lambda(scope, param, expr) => {
+            NixValue::Lambda(NixLambda(scope, param, expr)) => {
                 let scope = scope.clone().new_child();
 
                 match param {
@@ -218,6 +246,21 @@ impl Scope {
                                     unused.iter().position(|&key| key == varname).expect("Hola"),
                                 );
                             }
+
+                            // if varname.starts_with("crossSystem") {
+                            //     println!(
+                            //         "{}",
+                            //         NixError {
+                            //             labels: vec![NixLabel::from_syntax_node(
+                            //                 &scope.file,
+                            //                 entry.ident().unwrap().syntax(),
+                            //                 NixLabelMessage::Custom(varname.to_owned()),
+                            //                 NixLabelKind::Help
+                            //             ),],
+                            //             message: format!("Tracing pattern params")
+                            //         }
+                            //     );
+                            // }
 
                             let var = if let Some(var) = argument.get(varname).cloned() {
                                 var
@@ -270,9 +313,8 @@ impl Scope {
                 .map_or_else(|| Ok(NixValue::Null.wrap()), |expr| self.visit_expr(expr))
         } else {
             Err(NixError::from_message(
-                NixLabel::from_syntax_node(
-                    &self.file,
-                    node.condition().unwrap().syntax(),
+                NixLabel::new(
+                    NixSpan::from_ast_node(&self.file, &node.condition().unwrap()).into(),
                     NixLabelMessage::AssertionFailed,
                     NixLabelKind::Error,
                 ),
@@ -308,9 +350,9 @@ impl Scope {
 
         match node.operator().unwrap() {
             ast::BinOpKind::Concat => Err(NixError::todo(
-                &self.file,
-                node.syntax().clone().into(),
+                NixSpan::from_ast_node(&self.file, &node).into(),
                 "Concat op",
+                None,
             )),
             ast::BinOpKind::Update => lhs
                 .borrow()
@@ -338,25 +380,25 @@ impl Scope {
                     .ok_or_else(|| todo!("Error handling"))
                     .map(|rhs| NixValue::String(format!("{lhs}{rhs}")).wrap()),
                 _ => Err(NixError::todo(
-                    &self.file,
-                    node.syntax().clone().into(),
+                    NixSpan::from_ast_node(&self.file, &node).into(),
                     "Cannot add",
+                    None,
                 )),
             },
             ast::BinOpKind::Sub => Err(NixError::todo(
-                &self.file,
-                node.syntax().clone().into(),
+                NixSpan::from_ast_node(&self.file, &node).into(),
                 "Sub op",
+                None,
             )),
             ast::BinOpKind::Mul => Err(NixError::todo(
-                &self.file,
-                node.syntax().clone().into(),
+                NixSpan::from_ast_node(&self.file, &node).into(),
                 "Mul op",
+                None,
             )),
             ast::BinOpKind::Div => Err(NixError::todo(
-                &self.file,
-                node.syntax().clone().into(),
+                NixSpan::from_ast_node(&self.file, &node).into(),
                 "Div op",
+                None,
             )),
             ast::BinOpKind::And => lhs
                 .borrow()
@@ -380,24 +422,24 @@ impl Scope {
                         .unwrap_or_else(|| Ok(NixValue::Bool(true).wrap()))
                 }),
             ast::BinOpKind::Less => Err(NixError::todo(
-                &self.file,
-                node.syntax().clone().into(),
+                NixSpan::from_ast_node(&self.file, &node).into(),
                 "Less op",
+                None,
             )),
             ast::BinOpKind::LessOrEq => Err(NixError::todo(
-                &self.file,
-                node.syntax().clone().into(),
+                NixSpan::from_ast_node(&self.file, &node).into(),
                 "LessOrEq op",
+                None,
             )),
             ast::BinOpKind::More => Err(NixError::todo(
-                &self.file,
-                node.syntax().clone().into(),
+                NixSpan::from_ast_node(&self.file, &node).into(),
                 "More op",
+                None,
             )),
             ast::BinOpKind::MoreOrEq => Err(NixError::todo(
-                &self.file,
-                node.syntax().clone().into(),
+                NixSpan::from_ast_node(&self.file, &node).into(),
                 "MoreOrEq op",
+                None,
             )),
             ast::BinOpKind::NotEqual => self
                 .visit_expr(node.rhs().unwrap())
@@ -418,9 +460,9 @@ impl Scope {
 
     pub fn visit_error(self: &Rc<Self>, node: ast::Error) -> NixResult {
         Err(NixError::todo(
-            &self.file,
-            node.syntax().clone().into(),
+            NixSpan::from_ast_node(&self.file, &node).into(),
             "Error Expr",
+            None,
         ))
     }
 
@@ -439,16 +481,29 @@ impl Scope {
         let node = node.ident_token().unwrap();
         let varname = node.text().to_string();
 
+        // if varname.starts_with("crossSystem") {
+        //     println!(
+        //         "{}",
+        //         NixError::from_message(
+        //             NixLabel::new(
+        //                 &self.file,
+        //                 &node,
+        //                 NixLabelMessage::Custom(varname.clone()),
+        //                 NixLabelKind::Help
+        //             ),
+        //             "Tracing visit_ident"
+        //         )
+        //     );
+        // }
+
         self.get_variable(varname.clone())
             .ok_or_else(|| {
-                let label = NixLabel::from_syntax_token(
-                    &self.file,
-                    &node,
-                    NixLabelMessage::VariableNotFound,
-                    NixLabelKind::Error,
-                );
                 NixError::from_message(
-                    label,
+                    NixLabel::new(
+                        NixSpan::from_syntax_token(&self.file, &node).into(),
+                        NixLabelMessage::VariableNotFound,
+                        NixLabelKind::Error,
+                    ),
                     format!("Variable '\x1b[1;95m{varname}\x1b[0m' not found"),
                 )
             })?
@@ -482,7 +537,12 @@ impl Scope {
             ),
         };
 
-        Ok(NixValue::Lambda(self.clone().new_child(), param, node.body().unwrap()).wrap())
+        Ok(NixValue::Lambda(NixLambda(
+            self.clone().new_child(),
+            param,
+            node.body().unwrap(),
+        ))
+        .wrap())
     }
 
     pub fn visit_legacylet(self: &Rc<Self>, node: ast::LegacyLet) -> NixResult {
@@ -500,26 +560,26 @@ impl Scope {
     }
 
     pub fn visit_list(self: &Rc<Self>, node: ast::List) -> NixResult {
-        Ok(NixValue::List(
+        Ok(NixValue::List(NixList(Rc::new(
             node.items()
                 .map(|expr| LazyNixValue::Pending(self.clone(), expr).wrap_var())
                 .collect(),
-        )
+        )))
         .wrap())
     }
 
     pub fn visit_literal(self: &Rc<Self>, node: ast::Literal) -> NixResult {
         match node.kind() {
             ast::LiteralKind::Float(_) => Err(NixError::todo(
-                &self.file,
-                node.syntax().clone().into(),
+                NixSpan::from_ast_node(&self.file, &node).into(),
                 "Float literal",
+                None,
             )),
             ast::LiteralKind::Integer(value) => Ok(NixValue::Int(value.value().unwrap()).wrap()),
             ast::LiteralKind::Uri(_) => Err(NixError::todo(
-                &self.file,
-                node.syntax().clone().into(),
+                NixSpan::from_ast_node(&self.file, &node).into(),
                 "Uri literal",
+                None,
             )),
         }
     }
@@ -545,9 +605,9 @@ impl Scope {
                             if str.get(1..2) == Some(".") {
                                 let Some(parent) = dirname.parent() else {
                                     return Err(NixError::todo(
-                                        &self.file,
-                                        node.syntax().clone().into(),
+                                        NixSpan::from_ast_node(&self.file, &node).into(),
                                         "Error handling: path doesn't have parent",
+                                        None,
                                     ));
                                 };
                                 path += &parent.display().to_string();
@@ -629,9 +689,9 @@ impl Scope {
                 Ok(NixValue::Bool(!value).wrap())
             }
             ast::UnaryOpKind::Negate => Err(NixError::todo(
-                &self.file,
-                node.syntax().clone().into(),
+                NixSpan::from_ast_node(&self.file, &node).into(),
                 "Negate op",
+                None,
             )),
         }
     }

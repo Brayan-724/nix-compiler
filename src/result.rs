@@ -1,8 +1,8 @@
 use std::fmt::{self, Write};
-use std::ops::Range;
-use std::path::PathBuf;
+use std::rc::Rc;
 
-use rnix::{parser, NodeOrToken, SyntaxKind, SyntaxNode, SyntaxToken};
+use rnix::{parser, NodeOrToken, SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
+use rowan::ast::AstNode;
 use thiserror::Error;
 
 use crate::value::NixValueWrapped;
@@ -14,14 +14,23 @@ pub type NixResult<V = NixValueWrapped> = Result<V, NixError>;
 pub struct NixError {
     pub message: String,
     pub labels: Vec<NixLabel>,
+    pub backtrace: Option<Rc<NixBacktrace>>,
+}
+
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct NixBacktrace(Rc<NixSpan>, Option<Rc<NixBacktrace>>);
+
+#[derive(Clone, Debug)]
+pub struct NixSpan {
+    pub file: Rc<FileScope>,
+    pub start: (usize, usize, usize),
+    pub end: (usize, usize, usize),
 }
 
 #[derive(Clone, Debug)]
 pub struct NixLabel {
-    pub path: PathBuf,
-    pub line: usize,
-    pub range: Range<usize>,
-    pub context: String,
+    pub span: Rc<NixSpan>,
     pub label: NixLabelMessage,
     pub kind: NixLabelKind,
 }
@@ -46,6 +55,9 @@ pub enum NixLabelMessage {
 
     #[error("{0}")]
     Custom(String),
+
+    #[error("")]
+    Empty,
 
     #[error("Unexpected token")]
     UnexpectedToken,
@@ -92,15 +104,15 @@ impl fmt::Display for NixError {
         f.write_str(&self.message)?;
         f.write_fmt(format_args!(
             "\n \x1b[1;34m-->\x1b[0m {}:{}:{}\n",
-            first_label.path.display(),
-            first_label.line,
-            first_label.range.start + 1,
+            first_label.span.file.path.display(),
+            first_label.span.start.0,
+            first_label.span.start.1 + 1,
         ))?;
 
         let mut labels = self.labels.clone();
-        labels.sort_by_key(|v| v.line);
+        labels.sort_by_key(|v| v.span.start.0);
 
-        let max_line_width = labels.last().unwrap().line.to_string().len();
+        let max_line_width = labels.last().unwrap().span.end.0.to_string().len();
         let line_padding = " ".repeat(max_line_width);
         let dots = ".".repeat(max_line_width);
 
@@ -111,29 +123,101 @@ impl fmt::Display for NixError {
         let mut last_line = usize::MAX;
 
         for label in &labels {
-            if last_line != usize::MAX && label.line.abs_diff(last_line) >= 2 {
+            if last_line != usize::MAX && label.span.start.0.abs_diff(last_line) >= 2 {
                 f.write_char('\n')?;
                 f.write_str(&dots)?;
                 f.write_str(" |")?;
             }
 
-            if label.line != last_line {
-                f.write_fmt(format_args!(
-                    "\n\x1b[1;34m{line:0>max_line_width$} | \x1b[0m{context}",
-                    line = label.line,
-                    context = label.context,
-                ))?;
+            let is_singleline = label.span.start.0 == label.span.end.0;
+
+            if label.span.start.0 != last_line {
+                let start_line = label.span.start.0;
+                let offset_line = label.span.start.2;
+
+                if is_singleline {
+                    let next_newline = label.span.file.content[offset_line..]
+                        .chars()
+                        .skip(1)
+                        .position(|c| c == '\n')
+                        .unwrap_or_else(|| label.span.file.content.len() - offset_line)
+                        + offset_line
+                        + 1;
+
+                    f.write_fmt(format_args!(
+                        "\n\x1b[1;34m{line:0>max_line_width$} | \x1b[0m{context}",
+                        line = start_line,
+                        context = &label.span.file.content[offset_line..next_newline]
+                    ))?;
+                } else {
+                    let next_newline = {
+                        let mut line = start_line;
+                        label.span.file.content[offset_line..]
+                            .chars()
+                            .skip(1)
+                            .position(|c| match c {
+                                '\n' if line >= label.span.end.0 => true,
+                                '\n' => {
+                                    line += 1;
+                                    false
+                                }
+                                _ => false,
+                            })
+                            .unwrap_or_else(|| label.span.file.content.len() - offset_line)
+                            + offset_line
+                            + 1
+                    };
+
+                    let mut line = start_line;
+                    f.write_fmt(format_args!(
+                        "\n\x1b[1;34m{line:0>max_line_width$} {color}/ \x1b[0m",
+                        color = label.kind.color()
+                    ))?;
+                    for c in label.span.file.content[offset_line..next_newline].chars() {
+                        if c == '\n' {
+                            line += 1;
+                            f.write_fmt(format_args!(
+                                "\n\x1b[1;34m{line:0>max_line_width$} {color}| \x1b[0m",
+                                color = label.kind.color()
+                            ))?;
+                            continue;
+                        }
+
+                        f.write_char(c)?;
+                    }
+
+                    // f.write_fmt(format_args!(
+                    //     "\n\x1b[1;34m{line:0>max_line_width$} | \x1b[0m{context}",
+                    //     line = label.span.start.0,
+                    //     context = &label.span.file.content[offset_line..next_newline]
+                    // ))?;
+                }
+
+                last_line = label.span.end.0;
             }
 
-            last_line = label.line;
-
-            f.write_fmt(format_args!(
-                "\n\x1b[1;34m{line_padding} | \x1b[0m{spaces}{color}{arrow} {label}\x1b[0m",
-                spaces = " ".repeat(label.range.start),
-                color = label.kind.color(),
-                arrow = label.kind.symbol().repeat(label.range.len()),
-                label = label.label,
-            ))?;
+            if is_singleline {
+                f.write_fmt(format_args!(
+                    "\n\x1b[1;34m{line_padding} | \x1b[0m{spaces}{color}{arrow} {label}\x1b[0m",
+                    spaces = " ".repeat(label.span.start.1),
+                    color = label.kind.color(),
+                    arrow = label
+                        .kind
+                        .symbol()
+                        .repeat(label.span.start.1.abs_diff(label.span.end.1) + 1),
+                    label = label.label,
+                ))?;
+            } else {
+                f.write_fmt(format_args!(
+                    "\n\x1b[1;34m{line_padding} {color}\\ {arrow} {label}\x1b[0m",
+                    color = label.kind.color(),
+                    arrow = label
+                        .kind
+                        .symbol()
+                        .repeat(label.span.end.1.max(label.span.start.1) + 1),
+                    label = label.label,
+                ))?;
+            }
         }
 
         f.write_char('\n')
@@ -147,10 +231,11 @@ impl NixError {
         Self {
             message: message.to_string(),
             labels: vec![label.into()],
+            backtrace: None,
         }
     }
 
-    pub fn from_parse_error(file: &FileScope, error: parser::ParseError) -> Self {
+    pub fn from_parse_error(file: &Rc<FileScope>, error: parser::ParseError) -> Self {
         use parser::ParseError::*;
         let (message, labels) = match error {
             Unexpected(_) => todo!(),
@@ -162,20 +247,21 @@ impl NixError {
                     let expected = expected.first().unwrap();
                     let expected = syntax_kind_to_string(*expected);
 
-                    let expected_label = NixLabel::from_offset(
-                        file,
-                        range_start,
-                        expected.len(),
+                    let expected_label = NixLabel::new(
+                        NixSpan::from_offset(file, range_start, range_start).into(),
                         NixLabelMessage::AddHere(expected),
                         NixLabelKind::Help,
                     );
 
                     let unexpected = syntax_kind_to_string(unexpected);
 
-                    let unexpected_label = NixLabel::from_offset(
-                        file,
-                        range_start + 1,
-                        range.len().into(),
+                    let unexpected_label = NixLabel::new(
+                        NixSpan::from_offset(
+                            file,
+                            range_start + 1,
+                            range_start + usize::from(range.len()),
+                        )
+                        .into(),
                         NixLabelMessage::UnexpectedToken,
                         NixLabelKind::Error,
                     );
@@ -196,36 +282,34 @@ impl NixError {
             _ => unreachable!(),
         };
 
-        Self { message, labels }
+        Self {
+            message,
+            labels,
+            backtrace: None,
+        }
     }
 
     pub fn todo(
-        file: &FileScope,
-        node: NodeOrToken<SyntaxNode, SyntaxToken>,
+        span: Rc<NixSpan>,
         message: impl ToString,
+        backtrace: Option<Rc<NixBacktrace>>,
     ) -> Self {
         let message = message.to_string();
         let label = NixLabelMessage::Custom(message.clone());
         let kind = NixLabelKind::Todo;
 
+        let label = NixLabel::new(span, label, kind);
+
         Self {
             message,
-            labels: vec![match node {
-                NodeOrToken::Node(node) => NixLabel::from_syntax_node(file, &node, label, kind),
-                NodeOrToken::Token(token) => NixLabel::from_syntax_token(file, &token, label, kind),
-            }],
+            labels: vec![label],
+            backtrace,
         }
     }
 }
 
-impl NixLabel {
-    pub fn from_offset(
-        file: &FileScope,
-        mut offset: usize,
-        size: usize,
-        label: NixLabelMessage,
-        kind: NixLabelKind,
-    ) -> Self {
+impl NixSpan {
+    fn get_line_column(file: &FileScope, mut offset: usize) -> (usize, usize, usize) {
         loop {
             let last_newline = offset
                 - file.content[..offset]
@@ -234,11 +318,11 @@ impl NixLabel {
                     .position(|c| c == '\n')
                     .unwrap_or(offset);
 
-            let next_newline = file.content[last_newline..]
-                .chars()
-                .position(|c| c == '\n')
-                .unwrap_or(file.content.len() - last_newline)
-                + last_newline;
+            // let next_newline = file.content[last_newline..]
+            //     .chars()
+            //     .position(|c| c == '\n')
+            //     .unwrap_or(file.content.len() - last_newline)
+            //     + last_newline;
 
             let line = file.content[..=last_newline]
                 .chars()
@@ -246,55 +330,61 @@ impl NixLabel {
                 .count()
                 + 1;
 
-            let Some((line, column)) = (offset - last_newline).checked_sub(1).map(|c| (line, c))
-            else {
+            let Some(column) = (offset - last_newline).checked_sub(1) else {
                 offset = last_newline.saturating_sub(1);
                 continue;
             };
 
-            let size = size.min(next_newline - last_newline - column);
-
-            let context = file.content[last_newline..next_newline].to_owned();
-
-            break Self {
-                path: file.path.clone(),
-                line,
-                range: column..column + size,
-                context,
-                label,
-                kind,
-            };
+            break (line, column, last_newline);
         }
     }
 
-    pub fn from_syntax_node(
-        file: &FileScope,
-        node: &SyntaxNode,
-        label: NixLabelMessage,
-        kind: NixLabelKind,
-    ) -> Self {
-        NixLabel::from_offset(
+    pub fn from_offset(file: &Rc<FileScope>, start: usize, end: usize) -> Self {
+        let start = Self::get_line_column(file, start);
+        let end = Self::get_line_column(file, end);
+
+        Self {
+            file: file.clone(),
+            start,
+            end,
+        }
+    }
+
+    pub fn from_syntax_element(file: &Rc<FileScope>, node: &SyntaxElement) -> Self {
+        match node {
+            NodeOrToken::Node(node) => Self::from_syntax_node(file, node),
+            NodeOrToken::Token(node) => Self::from_syntax_token(file, node),
+        }
+    }
+
+    pub fn from_syntax_node(file: &Rc<FileScope>, node: &SyntaxNode) -> Self {
+        Self::from_offset(
             file,
             usize::from(node.text_range().start()) + 1,
-            node.text_range().len().into(),
-            label,
-            kind,
+            usize::from(node.text_range().end()),
         )
     }
 
-    pub fn from_syntax_token(
-        file: &FileScope,
-        node: &SyntaxToken,
-        label: NixLabelMessage,
-        kind: NixLabelKind,
-    ) -> Self {
-        NixLabel::from_offset(
+    pub fn from_syntax_token(file: &Rc<FileScope>, node: &SyntaxToken) -> Self {
+        Self::from_offset(
             file,
             usize::from(node.text_range().start()) + 1,
-            node.text_range().len().into(),
-            label,
-            kind,
+            usize::from(node.text_range().end()),
         )
+    }
+
+    pub fn from_ast_node(file: &Rc<FileScope>, node: &impl AstNode) -> Self {
+        Self::from_offset(
+            file,
+            usize::from(node.syntax().text_range().start()) + 1,
+            usize::from(node.syntax().text_range().end()),
+        )
+    }
+}
+
+impl NixLabel {
+    pub fn new(span: Rc<NixSpan>, label: NixLabelMessage, kind: NixLabelKind) -> Self {
+        Self { span, label, kind }
     }
 }
 

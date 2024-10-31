@@ -6,11 +6,10 @@ use std::path::Path;
 use std::rc::Rc;
 
 use rnix::ast;
-use rowan::ast::AstNode;
 
 pub use file::FileScope;
 
-use crate::result::{NixLabel, NixLabelKind, NixLabelMessage};
+use crate::result::{NixLabel, NixLabelKind, NixLabelMessage, NixSpan};
 use crate::{
     builtins, flake, AsAttrSet, AsString, NixError, NixResult, NixValue, NixValueWrapped, NixVar,
 };
@@ -118,14 +117,12 @@ impl Scope {
         let attr_set = attr_set.borrow();
 
         attr_set.get(&attr).unwrap().ok_or_else(|| {
-            let label = NixLabel::from_syntax_node(
-                &self.file,
-                last_attr.syntax(),
-                NixLabelMessage::AttributeMissing,
-                NixLabelKind::Error,
-            );
             NixError::from_message(
-                label,
+                NixLabel::new(
+                    NixSpan::from_ast_node(&self.file, &last_attr).into(),
+                    NixLabelMessage::AttributeMissing,
+                    NixLabelKind::Error,
+                ),
                 format!("Attribute '\x1b[1;95m{attr}\x1b[0m' missing"),
             )
         })

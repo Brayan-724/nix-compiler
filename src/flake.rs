@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::value::NixLambda;
 use crate::{AsAttrSet, LazyNixValue, NixResult, NixValue, NixValueWrapped, Scope};
 
 pub fn resolve_flake(result: NixValueWrapped) -> NixResult {
@@ -65,7 +66,7 @@ pub fn resolve_flake(result: NixValueWrapped) -> NixResult {
     let outputs = outputs.resolve()?;
     let outputs = outputs.borrow();
 
-    let Some((scope, _param, expr)) = outputs.as_lambda() else {
+    let Some(NixLambda(scope, _param, expr)) = outputs.as_lambda() else {
         todo!("outputs should be a lambda")
     };
 

@@ -1,15 +1,23 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::{fmt, fs};
 
 use crate::{NixError, NixResult};
 
 use super::Scope;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub struct FileScope {
     pub path: PathBuf,
     pub content: String,
+}
+
+impl fmt::Debug for FileScope {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FileScope")
+            .field("path", &self.path)
+            .finish()
+    }
 }
 
 impl FileScope {

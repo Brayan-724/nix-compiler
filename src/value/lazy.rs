@@ -3,10 +3,12 @@ use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::{fmt, mem};
 
-use rnix::ast;
+use rnix::{ast, SyntaxElement};
+use rowan::ast::AstNode;
 
+use crate::result::NixSpan;
 use crate::scope::Scope;
-use crate::NixResult;
+use crate::{NixError, NixLabel, NixLabelKind, NixLabelMessage, NixResult};
 
 use super::{AsAttrSet, NixValueWrapped, NixVar};
 
@@ -16,9 +18,10 @@ pub enum LazyNixValue {
     Pending(Rc<Scope>, ast::Expr),
     Eval(
         Rc<Scope>,
+        SyntaxElement,
         Rc<RefCell<Option<Box<dyn FnOnce(Rc<Scope>) -> NixResult>>>>,
     ),
-    Resolving,
+    Resolving(Rc<Scope>, SyntaxElement),
 }
 
 impl fmt::Debug for LazyNixValue {
@@ -27,7 +30,7 @@ impl fmt::Debug for LazyNixValue {
             LazyNixValue::Concrete(value) => fmt::Debug::fmt(value.borrow().deref(), f),
             LazyNixValue::Pending(..) => f.write_str("<not-resolved>"),
             LazyNixValue::Eval(..) => f.write_str("<not-resolved>"),
-            LazyNixValue::Resolving => f.write_str("<resolving>"),
+            LazyNixValue::Resolving(..) => f.write_str("<resolving>"),
         }
     }
 }
@@ -38,7 +41,7 @@ impl fmt::Display for LazyNixValue {
             LazyNixValue::Concrete(value) => fmt::Display::fmt(value.borrow().deref(), f),
             LazyNixValue::Pending(..) => f.write_str("<not-resolved>"),
             LazyNixValue::Eval(..) => f.write_str("<not-resolved>"),
-            LazyNixValue::Resolving => f.write_str("<resolving>"),
+            LazyNixValue::Resolving(..) => f.write_str("<resolving>"),
         }
     }
 }
@@ -56,8 +59,12 @@ impl LazyNixValue {
 }
 
 impl LazyNixValue {
-    pub fn new_eval(scope: Rc<Scope>, fun: Box<dyn FnOnce(Rc<Scope>) -> NixResult>) -> Self {
-        LazyNixValue::Eval(scope, Rc::new(RefCell::new(Option::Some(fun))))
+    pub fn new_eval(
+        scope: Rc<Scope>,
+        span: impl Into<SyntaxElement>,
+        fun: Box<dyn FnOnce(Rc<Scope>) -> NixResult>,
+    ) -> Self {
+        LazyNixValue::Eval(scope, span.into(), Rc::new(RefCell::new(Option::Some(fun))))
     }
 
     pub fn wrap_var(self) -> NixVar {
@@ -77,10 +84,36 @@ impl LazyNixValue {
             return Ok(value);
         }
 
-        let old = mem::replace(this.borrow_mut().deref_mut(), LazyNixValue::Resolving);
+        let (scope, span) = match *this.borrow() {
+            LazyNixValue::Concrete(_) => unreachable!(),
+            LazyNixValue::Pending(ref scope, ref expr) => {
+                (scope.clone(), expr.syntax().clone().into())
+            }
+            LazyNixValue::Eval(ref scope, ref span, _) => (scope.clone(), span.clone()),
+            LazyNixValue::Resolving(ref scope, ref span) => {
+                let label = NixLabelMessage::Empty;
+                let kind = NixLabelKind::Error;
+
+                let label = NixLabel::new(
+                    NixSpan::from_syntax_element(&scope.file, &span).into(),
+                    label,
+                    kind,
+                );
+
+                return Err(NixError::from_message(
+                    label,
+                    "Infinite recursion detected. Tried to get a value that is resolving",
+                ));
+            }
+        };
+
+        let old = mem::replace(
+            this.borrow_mut().deref_mut(),
+            LazyNixValue::Resolving(scope, span),
+        );
 
         match old {
-            LazyNixValue::Concrete(_) => unreachable!(),
+            LazyNixValue::Concrete(..) | LazyNixValue::Resolving(..) => unreachable!(),
             LazyNixValue::Pending(scope, expr) => {
                 let value = scope.visit_expr(expr)?;
 
@@ -88,7 +121,7 @@ impl LazyNixValue {
 
                 Ok(value)
             }
-            LazyNixValue::Eval(scope, eval) => {
+            LazyNixValue::Eval(scope, _, eval) => {
                 let value =
                     eval.borrow_mut()
                         .take()
@@ -97,9 +130,6 @@ impl LazyNixValue {
                 *this.borrow_mut().deref_mut() = LazyNixValue::Concrete(value.clone());
 
                 Ok(value)
-            }
-            LazyNixValue::Resolving => {
-                unreachable!("Infinite recursion detected. Tried to get a value that is resolving")
             }
         }
     }
