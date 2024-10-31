@@ -26,9 +26,15 @@ fn parse_builtin(func: Function) -> Result<TokenStream, Error> {
 
     {
         if let Ok(old) = std::env::var("__rust_reflection__nix-macros__builtins") {
-            std::env::set_var("__rust_reflection__nix-macros__builtins", format!("{old};{}", struct_name.to_string()))
+            std::env::set_var(
+                "__rust_reflection__nix-macros__builtins",
+                format!("{old};{}", struct_name.to_string()),
+            )
         } else {
-            std::env::set_var("__rust_reflection__nix-macros__builtins", struct_name.to_string())
+            std::env::set_var(
+                "__rust_reflection__nix-macros__builtins",
+                struct_name.to_string(),
+            )
         }
     }
 
@@ -149,17 +155,20 @@ fn parse_builtin(func: Function) -> Result<TokenStream, Error> {
 
 #[proc_macro]
 pub fn gen_builtins(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
-
-    let Ok(builtins) =std::env::var("__rust_reflection__nix-macros__builtins") else {
-        return Error::new("Set at least one builtin").to_compile_error().into();
+    let Ok(builtins) = std::env::var("__rust_reflection__nix-macros__builtins") else {
+        return Error::new("Set at least one builtin")
+            .to_compile_error()
+            .into();
     };
 
-    let builtins = builtins.split(";").map(|builtin| {
-        let builtin = format_ident!("{builtin}");
+    let builtins = builtins
+        .split(";")
+        .map(|builtin| {
+            let builtin = format_ident!("{builtin}");
 
-        quote! { builtins.insert(#builtin::NAME.to_owned(), #builtin::generate().wrap_var()) }
-
-    }).collect::<Vec<_>>();
+            quote! { builtins.insert(#builtin::NAME.to_owned(), #builtin::generate().wrap_var()) }
+        })
+        .collect::<Vec<_>>();
 
     let nix_version_key = "nixVersion";
     let nix_version = "2.24.9";
@@ -179,6 +188,6 @@ pub fn gen_builtins(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
             NixValue::AttrSet(builtins)
         }
-    }.into()
-
+    }
+    .into()
 }
