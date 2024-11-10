@@ -18,8 +18,7 @@ pub struct NixError {
 }
 
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
-pub struct NixBacktrace(Rc<NixSpan>, Option<Rc<NixBacktrace>>);
+pub struct NixBacktrace(pub Rc<NixSpan>, pub Option<Rc<NixBacktrace>>);
 
 #[derive(Clone, Debug)]
 pub struct NixSpan {
@@ -89,6 +88,30 @@ impl NixLabelKind {
             NixLabelKind::Help => "help",
             NixLabelKind::Todo => "todo",
         }
+    }
+}
+
+impl fmt::Display for NixBacktrace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let file = self
+            .0
+            .file
+            .path
+            .strip_prefix(std::env::current_dir().unwrap())
+            .map(|p| format!("./{}", p.display()))
+            .unwrap_or(self.0.file.path.display().to_string());
+
+        f.write_fmt(format_args!(
+            "at {file} {line}:{column}",
+            line = self.0.start.0,
+            column = self.0.start.1
+        ))?;
+
+        if let Some(backtrace) = &self.1 {
+            f.write_fmt(format_args!("\n{backtrace}"))?;
+        }
+
+        Ok(())
     }
 }
 
@@ -185,12 +208,6 @@ impl fmt::Display for NixError {
 
                         f.write_char(c)?;
                     }
-
-                    // f.write_fmt(format_args!(
-                    //     "\n\x1b[1;34m{line:0>max_line_width$} | \x1b[0m{context}",
-                    //     line = label.span.start.0,
-                    //     context = &label.span.file.content[offset_line..next_newline]
-                    // ))?;
                 }
 
                 last_line = label.span.end.0;
@@ -220,7 +237,13 @@ impl fmt::Display for NixError {
             }
         }
 
-        f.write_char('\n')
+        f.write_char('\n')?;
+
+        if let Some(backtrace) = &self.backtrace {
+            f.write_fmt(format_args!("{backtrace}"));
+        }
+
+        Ok(())
     }
 }
 
@@ -324,7 +347,7 @@ impl NixSpan {
             //     .unwrap_or(file.content.len() - last_newline)
             //     + last_newline;
 
-            let line = file.content[..=last_newline]
+            let line = file.content[..=last_newline.min(file.content.len() - 1)]
                 .chars()
                 .filter(|c| *c == '\n')
                 .count()

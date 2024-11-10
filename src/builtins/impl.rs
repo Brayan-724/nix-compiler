@@ -7,7 +7,7 @@ use rnix::ast;
 // use rowan::ast::AstNode;
 
 use crate::value::{NixLambda, NixList};
-use crate::{AsAttrSet, AsString, LazyNixValue, NixValue, NixValueWrapped, Scope};
+use crate::{AsAttrSet, AsString, LazyNixValue, NixBacktrace, NixValue, NixValueWrapped, Scope};
 
 #[builtin]
 pub fn abort(message: String) -> ! {
@@ -75,13 +75,16 @@ pub fn get_env(env: String) -> NixResult {
 }
 
 #[builtin]
-pub fn import(argument: NixValueWrapped) {
+pub fn import(backtrace: Rc<NixBacktrace>, argument: NixValueWrapped) {
     let argument = argument.borrow();
 
     let path = match *argument {
         NixValue::AttrSet(ref set) => {
             let is_flake = if let Some(ty) = set.get("_type") {
-                ty.resolve_map(|val| val.as_string() == Some("flake".to_owned()))?
+                ty.resolve(backtrace.clone())?
+                    .borrow()
+                    .as_string()
+                    .eq(&Some("flake".to_owned()))
             } else {
                 false
             };
@@ -91,7 +94,7 @@ pub fn import(argument: NixValueWrapped) {
             }
 
             let out_path = set.get("outPath").expect("Flake should have outPath");
-            let out_path = out_path.resolve()?;
+            let out_path = out_path.resolve(backtrace.clone())?;
             let out_path = out_path.borrow();
 
             let NixValue::Path(ref path) = *out_path else {
@@ -105,7 +108,7 @@ pub fn import(argument: NixValueWrapped) {
         _ => todo!("Error handling"),
     };
 
-    Scope::import_path(path)
+    Scope::import_path(backtrace, path)
 }
 
 #[builtin()]
@@ -126,7 +129,11 @@ pub fn path_exists(path: PathBuf) -> NixResult {
 }
 
 #[builtin()]
-pub fn remove_attrs(attrset: NixValueWrapped, attrs: NixValueWrapped) -> NixResult {
+pub fn remove_attrs(
+    backtrace: Rc<NixBacktrace>,
+    attrset: NixValueWrapped,
+    attrs: NixValueWrapped,
+) -> NixResult {
     if !attrset.borrow().is_attr_set() {
         todo!("Error handling")
     }
@@ -142,7 +149,7 @@ pub fn remove_attrs(attrset: NixValueWrapped, attrs: NixValueWrapped) -> NixResu
         .0
         .iter()
         .map(|attr| {
-            attr.resolve()
+            attr.resolve(backtrace.clone())
                 .map(|attr| attr.borrow().as_string().unwrap())
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -160,10 +167,10 @@ pub fn to_string(argument: String) -> NixResult {
 }
 
 #[builtin()]
-pub fn try_eval(argument: (Rc<Scope>, ast::Expr)) -> NixResult {
+pub fn try_eval(backtrace: Rc<NixBacktrace>, argument: (Rc<Scope>, ast::Expr)) -> NixResult {
     let (scope, node) = argument;
 
-    let Ok(argument) = scope.visit_expr(node) else {
+    let Ok(argument) = scope.visit_expr(backtrace, node) else {
         let mut result = HashMap::new();
         result.insert("success".to_string(), NixValue::Bool(false).wrap_var());
         return Ok(NixValue::AttrSet(result).wrap());

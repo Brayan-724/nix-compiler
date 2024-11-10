@@ -3,25 +3,23 @@ use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::{fmt, mem};
 
-use rnix::{ast, SyntaxElement};
-use rowan::ast::AstNode;
+use rnix::ast;
 
-use crate::result::NixSpan;
-use crate::scope::Scope;
-use crate::{NixError, NixLabel, NixLabelKind, NixLabelMessage, NixResult};
-
-use super::{AsAttrSet, NixValueWrapped, NixVar};
+use crate::{
+    AsAttrSet, NixBacktrace, NixError, NixLabel, NixLabelKind, NixLabelMessage, NixResult, NixSpan,
+    NixValueWrapped, NixVar, Scope,
+};
 
 #[derive(Clone)]
 pub enum LazyNixValue {
     Concrete(NixValueWrapped),
-    Pending(Rc<Scope>, ast::Expr),
+    Pending(Rc<NixSpan>, Rc<Scope>, ast::Expr),
     Eval(
+        Rc<NixSpan>,
         Rc<Scope>,
-        SyntaxElement,
-        Rc<RefCell<Option<Box<dyn FnOnce(Rc<Scope>) -> NixResult>>>>,
+        Rc<RefCell<Option<Box<dyn FnOnce(Rc<NixBacktrace>, Rc<Scope>) -> NixResult>>>>,
     ),
-    Resolving(Rc<Scope>, SyntaxElement),
+    Resolving(Rc<NixBacktrace>),
 }
 
 impl fmt::Debug for LazyNixValue {
@@ -47,9 +45,13 @@ impl fmt::Display for LazyNixValue {
 }
 
 impl LazyNixValue {
-    pub fn try_eq(lhs: &Rc<RefCell<Self>>, rhs: &Rc<RefCell<Self>>) -> NixResult<bool> {
-        let lhs = LazyNixValue::resolve(lhs)?;
-        let rhs = LazyNixValue::resolve(rhs)?;
+    pub fn try_eq(
+        lhs: &Rc<RefCell<Self>>,
+        rhs: &Rc<RefCell<Self>>,
+        backtrace: Rc<NixBacktrace>,
+    ) -> NixResult<bool> {
+        let lhs = LazyNixValue::resolve(lhs, backtrace.clone())?;
+        let rhs = LazyNixValue::resolve(rhs, backtrace)?;
 
         let lhs = lhs.borrow();
         let rhs = rhs.borrow();
@@ -61,10 +63,10 @@ impl LazyNixValue {
 impl LazyNixValue {
     pub fn new_eval(
         scope: Rc<Scope>,
-        span: impl Into<SyntaxElement>,
-        fun: Box<dyn FnOnce(Rc<Scope>) -> NixResult>,
+        backtrace: Rc<NixSpan>,
+        fun: Box<dyn FnOnce(Rc<NixBacktrace>, Rc<Scope>) -> NixResult>,
     ) -> Self {
-        LazyNixValue::Eval(scope, span.into(), Rc::new(RefCell::new(Option::Some(fun))))
+        LazyNixValue::Eval(backtrace, scope, Rc::new(RefCell::new(Option::Some(fun))))
     }
 
     pub fn wrap_var(self) -> NixVar {
@@ -79,53 +81,57 @@ impl LazyNixValue {
         }
     }
 
-    pub fn resolve(this: &Rc<RefCell<Self>>) -> NixResult {
+    pub fn resolve(this: &Rc<RefCell<Self>>, backtrace: Rc<NixBacktrace>) -> NixResult {
         if let Some(value) = this.borrow().as_concrete() {
             return Ok(value);
         }
 
-        let (scope, span) = match *this.borrow() {
+        let backtrace = match *this.borrow() {
             LazyNixValue::Concrete(_) => unreachable!(),
-            LazyNixValue::Pending(ref scope, ref expr) => {
-                (scope.clone(), expr.syntax().clone().into())
+            LazyNixValue::Pending(ref span, ..) => {
+                Rc::new(NixBacktrace(span.clone(), Some(backtrace)))
             }
-            LazyNixValue::Eval(ref scope, ref span, _) => (scope.clone(), span.clone()),
-            LazyNixValue::Resolving(ref scope, ref span) => {
+            LazyNixValue::Eval(ref span, ..) => {
+                Rc::new(NixBacktrace(span.clone(), Some(backtrace)))
+            }
+            LazyNixValue::Resolving(ref backtrace) => {
                 let label = NixLabelMessage::Empty;
                 let kind = NixLabelKind::Error;
 
-                let label = NixLabel::new(
-                    NixSpan::from_syntax_element(&scope.file, &span).into(),
-                    label,
-                    kind,
-                );
+                let NixBacktrace(span, backtrace) = &**backtrace;
 
-                return Err(NixError::from_message(
-                    label,
-                    "Infinite recursion detected. Tried to get a value that is resolving",
-                ));
+                let label = NixLabel::new(span.clone(), label, kind);
+
+                return Err(NixError {
+                    message: "Infinite recursion detected. Tried to get a value that is resolving"
+                        .to_owned(),
+                    labels: vec![label],
+                    backtrace: backtrace.clone(),
+                });
             }
         };
 
         let old = mem::replace(
             this.borrow_mut().deref_mut(),
-            LazyNixValue::Resolving(scope, span),
+            LazyNixValue::Resolving(backtrace.clone()),
         );
 
         match old {
             LazyNixValue::Concrete(..) | LazyNixValue::Resolving(..) => unreachable!(),
-            LazyNixValue::Pending(scope, expr) => {
-                let value = scope.visit_expr(expr)?;
+            LazyNixValue::Pending(_, scope, expr) => {
+                let value = scope.visit_expr(backtrace, expr)?;
 
                 *this.borrow_mut().deref_mut() = LazyNixValue::Concrete(value.clone());
 
                 Ok(value)
             }
-            LazyNixValue::Eval(scope, _, eval) => {
-                let value =
-                    eval.borrow_mut()
-                        .take()
-                        .expect("Eval cannot be called twice")(scope.clone())?;
+            LazyNixValue::Eval(_, scope, eval) => {
+                let value = eval
+                    .borrow_mut()
+                    .take()
+                    .expect("Eval cannot be called twice")(
+                    backtrace, scope.clone()
+                )?;
 
                 *this.borrow_mut().deref_mut() = LazyNixValue::Concrete(value.clone());
 
@@ -134,8 +140,12 @@ impl LazyNixValue {
         }
     }
 
-    pub fn resolve_set(this: &Rc<RefCell<Self>>, recursive: bool) -> NixResult {
-        let value = Self::resolve(this)?;
+    pub fn resolve_set(
+        this: &Rc<RefCell<Self>>,
+        recursive: bool,
+        backtrace: Rc<NixBacktrace>,
+    ) -> NixResult {
+        let value = Self::resolve(this, backtrace.clone())?;
 
         if value.borrow().is_attr_set() {
             let values = if let Some(set) = value.borrow().as_attr_set() {
@@ -146,9 +156,9 @@ impl LazyNixValue {
 
             for var in values {
                 if recursive {
-                    var.resolve_set(true)?;
+                    var.resolve_set(true, backtrace.clone())?;
                 } else {
-                    var.resolve()?;
+                    var.resolve(backtrace.clone())?;
                 }
             }
 

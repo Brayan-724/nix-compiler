@@ -11,15 +11,25 @@ pub use file::FileScope;
 
 use crate::result::{NixLabel, NixLabelKind, NixLabelMessage, NixSpan};
 use crate::{
-    builtins, flake, AsAttrSet, AsString, NixError, NixResult, NixValue, NixValueWrapped, NixVar,
+    builtins, flake, AsAttrSet, AsString, NixBacktrace, NixError, NixResult, NixValue,
+    NixValueWrapped, NixVar,
 };
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct Scope {
+    pub backtrace: Option<Rc<NixBacktrace>>,
     pub file: Rc<FileScope>,
     pub variables: NixValueWrapped,
     pub parent: Option<Rc<Scope>>,
 }
+
+impl PartialEq for Scope {
+    fn eq(&self, other: &Self) -> bool {
+        self.file == other.file && self.variables == other.variables && self.parent == other.parent
+    }
+}
+
+impl Eq for Scope {}
 
 impl Scope {
     pub fn new_with_builtins(file_scope: Rc<FileScope>) -> Rc<Self> {
@@ -41,12 +51,14 @@ impl Scope {
             file: file_scope.clone(),
             variables: NixValue::AttrSet(globals).wrap(),
             parent: None,
+            backtrace: None,
         });
 
         Rc::new(Self {
             file: file_scope,
             variables: NixValue::AttrSet(HashMap::new()).wrap(),
             parent: Some(parent),
+            backtrace: None,
         })
     }
 
@@ -55,6 +67,7 @@ impl Scope {
             file: self.file.clone(),
             variables: NixValue::AttrSet(HashMap::new()).wrap(),
             parent: Some(self),
+            backtrace: None,
         })
     }
 
@@ -63,6 +76,7 @@ impl Scope {
             file: self.file.clone(),
             variables,
             parent: Some(self),
+            backtrace: None,
         })
     }
 
@@ -88,15 +102,15 @@ impl Scope {
             })
     }
 
-    pub fn import_path(path: impl AsRef<Path>) -> NixResult {
+    pub fn import_path(backtrace: Rc<NixBacktrace>, path: impl AsRef<Path>) -> NixResult {
         let path = path.as_ref();
 
         println!("Importing {path:#?}");
 
-        let result = FileScope::from_path(path).evaluate()?;
+        let (backtrace, result) = FileScope::from_path(path).evaluate(Some(backtrace))?;
 
         if path.file_name() == Some(OsStr::new("flake.nix")) {
-            flake::resolve_flake(result)
+            flake::resolve_flake(backtrace, result)
         } else {
             Ok(result)
         }
@@ -104,15 +118,16 @@ impl Scope {
 
     pub fn resolve_attr_path<'a>(
         self: &Rc<Self>,
+        backtrace: Rc<NixBacktrace>,
         value: NixValueWrapped,
         attr_path: ast::Attrpath,
     ) -> NixResult<NixVar> {
         let mut attrs: Vec<_> = attr_path.attrs().collect();
         let last_attr = attrs.pop().unwrap();
 
-        let attr_set = self.resolve_attr_set_path(value, attrs.into_iter())?;
+        let attr_set = self.resolve_attr_set_path(backtrace.clone(), value, attrs.into_iter())?;
 
-        let attr = self.resolve_attr(&last_attr)?;
+        let attr = self.resolve_attr(backtrace, &last_attr)?;
 
         let attr_set = attr_set.borrow();
 
@@ -130,11 +145,12 @@ impl Scope {
 
     pub fn resolve_attr_set_path<'a>(
         self: &Rc<Self>,
+        backtrace: Rc<NixBacktrace>,
         value: NixValueWrapped,
         mut attr_path: impl Iterator<Item = ast::Attr>,
     ) -> NixResult {
         if let Some(attr) = attr_path.next() {
-            let attr = self.resolve_attr(&attr)?;
+            let attr = self.resolve_attr(backtrace.clone(), &attr)?;
 
             let set_value = value.borrow().get(&attr).unwrap();
 
@@ -144,26 +160,34 @@ impl Scope {
                     .insert(attr, NixValue::AttrSet(HashMap::new()).wrap_var())
                     .unwrap();
 
-                return self.resolve_attr_set_path(last.resolve()?, attr_path);
+                return self.resolve_attr_set_path(
+                    backtrace.clone(),
+                    last.resolve(backtrace)?,
+                    attr_path,
+                );
             };
 
-            let set_value = set_value.resolve()?;
+            let set_value = set_value.resolve(backtrace.clone())?;
 
             if !set_value.borrow().is_attr_set() {
                 todo!("Error handling for {:#}", set_value.borrow());
             };
 
-            self.resolve_attr_set_path(set_value, attr_path)
+            self.resolve_attr_set_path(backtrace, set_value, attr_path)
         } else {
             Ok(value)
         }
     }
 
-    pub fn resolve_attr(self: &Rc<Self>, attr: &ast::Attr) -> NixResult<String> {
+    pub fn resolve_attr(
+        self: &Rc<Self>,
+        backtrace: Rc<NixBacktrace>,
+        attr: &ast::Attr,
+    ) -> NixResult<String> {
         match attr {
             ast::Attr::Ident(ident) => Ok(ident.ident_token().unwrap().text().to_owned()),
             ast::Attr::Dynamic(dynamic) => Ok(self
-                .visit_expr(dynamic.expr().unwrap())?
+                .visit_expr(backtrace, dynamic.expr().unwrap())?
                 .borrow()
                 .as_string()
                 .expect("Cannot cast as string")),

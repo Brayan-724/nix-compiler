@@ -100,10 +100,11 @@ impl fmt::Display for NixValue {
                 }
 
                 for (key, value) in set {
-                    let value = value.resolve().unwrap_or_else(|err| {
-                        eprintln!("{err}");
+                    let value = value.as_concrete().unwrap_or_else(|| {
+                        eprintln!("Can't display something unresolved, run `.resolve_set()` before display it");
                         std::process::exit(1)
                     });
+
                     let value = value.as_ref().borrow();
                     let value = value.deref();
 
@@ -156,7 +157,10 @@ impl fmt::Display for NixValue {
                 }
 
                 for value in &*list.0 {
-                    let value = value.resolve().unwrap();
+                    let value = value.as_concrete().unwrap_or_else(|| {
+                        eprintln!("Can't display something unresolved, run `.resolve_set()` before display it");
+                        std::process::exit(1)
+                    });
                     let value = value.as_ref().borrow();
                     let value = value.deref();
 

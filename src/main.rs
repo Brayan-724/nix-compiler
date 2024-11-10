@@ -8,7 +8,9 @@ mod value;
 use std::env;
 
 pub use builtins::{NixBuiltin, NixBuiltinInfo};
-pub use result::{NixError, NixLabel, NixLabelKind, NixLabelMessage, NixResult};
+pub use result::{
+    NixBacktrace, NixError, NixLabel, NixLabelKind, NixLabelMessage, NixResult, NixSpan,
+};
 pub use scope::{FileScope, Scope};
 pub use value::{
     AsAttrSet, AsString, LazyNixValue, NixLambdaParam, NixValue, NixValueWrapped, NixVar,
@@ -24,26 +26,28 @@ fn main() {
 
     let is_flake = file.ends_with("flake.nix");
 
-    let result = FileScope::from_path(file).evaluate().unwrap_or_else(|err| {
-        eprintln!("{err}");
-        std::process::exit(1);
-    });
+    let (backtrace, result) = FileScope::from_path(file)
+        .evaluate(None)
+        .unwrap_or_else(|err| {
+            eprintln!("{err}");
+            std::process::exit(1);
+        });
 
-    if is_flake {
-        let outputs = flake::resolve_flake(result).unwrap();
-
-        let outputs = LazyNixValue::Concrete(outputs)
-            .wrap_var()
-            .resolve_set(true)
-            .unwrap_or_else(|err| {
-                eprintln!("{err}");
-                std::process::exit(1);
-            });
-
-        println!("Result (Expanded): {:#}", outputs.borrow());
-        println!("Result (Minimized): {}", outputs.borrow());
+    let outputs = if is_flake {
+        flake::resolve_flake(backtrace.clone(), result).unwrap()
     } else {
-        println!("Result (Expanded): {:#}", result.borrow());
-        println!("Result (Minimized): {}", result.borrow());
-    }
+        result
+    };
+
+    let outputs = LazyNixValue::Concrete(outputs)
+        .wrap_var()
+        .resolve_set(true, backtrace)
+        .unwrap_or_else(|err| {
+            eprintln!("{err}");
+            std::process::exit(1);
+        });
+
+    println!("Result (Expanded): {:?}", outputs.borrow());
+    println!("Result (Expanded): {:#}", outputs.borrow());
+    println!("Result (Minimized): {}", outputs.borrow());
 }

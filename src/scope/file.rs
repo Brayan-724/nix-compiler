@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::{fmt, fs};
 
-use crate::{NixError, NixResult};
+use crate::{NixBacktrace, NixError, NixResult, NixSpan, NixValueWrapped};
 
 use super::Scope;
 
@@ -36,13 +36,23 @@ impl FileScope {
         })
     }
 
-    pub fn evaluate(self: Rc<Self>) -> NixResult {
+    pub fn evaluate(
+        self: Rc<Self>,
+        backtrace: Option<Rc<NixBacktrace>>,
+    ) -> NixResult<(Rc<NixBacktrace>, NixValueWrapped)> {
         let root = rnix::Root::parse(&self.content)
             .ok()
             .map_err(|error| NixError::from_parse_error(&self, error))?;
 
+        let backtrace = Rc::new(NixBacktrace(
+            Rc::new(NixSpan::from_ast_node(&self, &root)),
+            backtrace,
+        ));
+
         let scope = Scope::new_with_builtins(self);
 
-        scope.visit_root(root)
+        let out = scope.visit_root(backtrace.clone(), root)?;
+
+        Ok((backtrace, out))
     }
 }

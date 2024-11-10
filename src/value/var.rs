@@ -3,7 +3,7 @@ use std::fmt;
 use std::ops::Deref;
 use std::rc::Rc;
 
-use crate::NixResult;
+use crate::{NixBacktrace, NixResult};
 
 use super::{LazyNixValue, NixValue, NixValueWrapped};
 
@@ -31,31 +31,31 @@ impl PartialEq for NixVar {
 impl Eq for NixVar {}
 
 impl NixVar {
-    pub fn try_eq(&self, rhs: &Self) -> NixResult<bool> {
-        LazyNixValue::try_eq(&self.0, &rhs.0)
+    pub fn try_eq(&self, rhs: &Self, backtrace: Rc<NixBacktrace>) -> NixResult<bool> {
+        LazyNixValue::try_eq(&self.0, &rhs.0, backtrace)
     }
 
     pub fn as_concrete(&self) -> Option<NixValueWrapped> {
         self.0.borrow().as_concrete()
     }
 
-    pub fn resolve(&self) -> NixResult {
+    pub fn resolve(&self, backtrace: Rc<NixBacktrace>) -> NixResult {
         if let Some(value) = self.0.borrow().as_concrete() {
             return Ok(value);
         }
 
-        LazyNixValue::resolve(&self.0)
+        LazyNixValue::resolve(&self.0, backtrace)
     }
 
-    pub fn resolve_set(&self, recursive: bool) -> NixResult {
-        if let Some(value) = self.0.borrow().as_concrete() {
-            return Ok(value);
-        }
-
-        LazyNixValue::resolve_set(&self.0, recursive)
+    pub fn resolve_set(&self, recursive: bool, backtrace: Rc<NixBacktrace>) -> NixResult {
+        LazyNixValue::resolve_set(&self.0, recursive, backtrace)
     }
 
-    pub fn resolve_map<T>(&self, f: impl FnOnce(&NixValue) -> T) -> NixResult<T> {
-        Ok(f(self.resolve()?.borrow().deref()))
+    pub fn resolve_map<T>(
+        &self,
+        backtrace: Rc<NixBacktrace>,
+        f: impl FnOnce(&NixValue) -> T,
+    ) -> NixResult<T> {
+        Ok(f(self.resolve(backtrace)?.borrow().deref()))
     }
 }
