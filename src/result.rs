@@ -8,6 +8,8 @@ use thiserror::Error;
 use crate::value::NixValueWrapped;
 use crate::FileScope;
 
+const BACKTRACE_ENV: &str = "NIX_BACKTRACE";
+
 pub type NixResult<V = NixValueWrapped> = Result<V, NixError>;
 
 #[derive(Clone, Debug)]
@@ -93,157 +95,48 @@ impl NixLabelKind {
 
 impl fmt::Display for NixBacktrace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let file = self
-            .0
-            .file
-            .path
-            .strip_prefix(std::env::current_dir().unwrap())
-            .map(|p| format!("./{}", p.display()))
-            .unwrap_or(self.0.file.path.display().to_string());
+        let Ok(backtrace_level) = std::env::var(BACKTRACE_ENV) else {
+            return Ok(());
+        };
 
-        f.write_fmt(format_args!(
-            "at {file} {line}:{column}",
-            line = self.0.start.0,
-            column = self.0.start.1
-        ))?;
+        if backtrace_level.starts_with("f") {
+            print_labels(
+                f,
+                &[NixLabel::new(
+                    self.0.clone(),
+                    NixLabelMessage::Empty,
+                    NixLabelKind::Help,
+                )],
+                None,
+                self.1.clone(),
+            )
+        } else {
+            let file = self
+                .0
+                .file
+                .path
+                .strip_prefix(std::env::current_dir().unwrap())
+                .map(|p| format!("./{}", p.display()))
+                .unwrap_or(self.0.file.path.display().to_string());
 
-        if let Some(backtrace) = &self.1 {
-            f.write_fmt(format_args!("\n{backtrace}"))?;
+            f.write_fmt(format_args!(
+                "    \x1b[34mat\x1b[36m {file}\x1b[0m {line}:{column}",
+                line = self.0.start.0,
+                column = self.0.start.1
+            ))?;
+
+            if let Some(backtrace) = &self.1 {
+                f.write_fmt(format_args!("\n{backtrace}"))?;
+            }
+
+            Ok(())
         }
-
-        Ok(())
     }
 }
 
 impl fmt::Display for NixError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        assert!(!self.labels.is_empty());
-
-        let first_label = self.labels.first().unwrap();
-
-        f.write_str(first_label.kind.color())?;
-        f.write_str(first_label.kind.text())?;
-        f.write_str(":\x1b[0m ")?;
-        f.write_str(&self.message)?;
-        f.write_fmt(format_args!(
-            "\n \x1b[1;34m-->\x1b[0m {}:{}:{}\n",
-            first_label.span.file.path.display(),
-            first_label.span.start.0,
-            first_label.span.start.1 + 1,
-        ))?;
-
-        let mut labels = self.labels.clone();
-        labels.sort_by_key(|v| v.span.start.0);
-
-        let max_line_width = labels.last().unwrap().span.end.0.to_string().len();
-        let line_padding = " ".repeat(max_line_width);
-        let dots = ".".repeat(max_line_width);
-
-        f.write_str("\x1b[1;34m")?;
-        f.write_str(&line_padding)?;
-        f.write_str(" | \x1b[0m")?;
-
-        let mut last_line = usize::MAX;
-
-        for label in &labels {
-            if last_line != usize::MAX && label.span.start.0.abs_diff(last_line) >= 2 {
-                f.write_char('\n')?;
-                f.write_str(&dots)?;
-                f.write_str(" |")?;
-            }
-
-            let is_singleline = label.span.start.0 == label.span.end.0;
-
-            if label.span.start.0 != last_line {
-                let start_line = label.span.start.0;
-                let offset_line = label.span.start.2;
-
-                if is_singleline {
-                    let next_newline = label.span.file.content[offset_line..]
-                        .chars()
-                        .skip(1)
-                        .position(|c| c == '\n')
-                        .unwrap_or_else(|| label.span.file.content.len() - offset_line)
-                        + offset_line
-                        + 1;
-
-                    f.write_fmt(format_args!(
-                        "\n\x1b[1;34m{line:0>max_line_width$} | \x1b[0m{context}",
-                        line = start_line,
-                        context = &label.span.file.content[offset_line..next_newline]
-                    ))?;
-                } else {
-                    let next_newline = {
-                        let mut line = start_line;
-                        label.span.file.content[offset_line..]
-                            .chars()
-                            .skip(1)
-                            .position(|c| match c {
-                                '\n' if line >= label.span.end.0 => true,
-                                '\n' => {
-                                    line += 1;
-                                    false
-                                }
-                                _ => false,
-                            })
-                            .unwrap_or_else(|| label.span.file.content.len() - offset_line)
-                            + offset_line
-                            + 1
-                    };
-
-                    let mut line = start_line;
-                    f.write_fmt(format_args!(
-                        "\n\x1b[1;34m{line:0>max_line_width$} {color}/ \x1b[0m",
-                        color = label.kind.color()
-                    ))?;
-                    for c in label.span.file.content[offset_line..next_newline].chars() {
-                        if c == '\n' {
-                            line += 1;
-                            f.write_fmt(format_args!(
-                                "\n\x1b[1;34m{line:0>max_line_width$} {color}| \x1b[0m",
-                                color = label.kind.color()
-                            ))?;
-                            continue;
-                        }
-
-                        f.write_char(c)?;
-                    }
-                }
-
-                last_line = label.span.end.0;
-            }
-
-            if is_singleline {
-                f.write_fmt(format_args!(
-                    "\n\x1b[1;34m{line_padding} | \x1b[0m{spaces}{color}{arrow} {label}\x1b[0m",
-                    spaces = " ".repeat(label.span.start.1),
-                    color = label.kind.color(),
-                    arrow = label
-                        .kind
-                        .symbol()
-                        .repeat(label.span.start.1.abs_diff(label.span.end.1) + 1),
-                    label = label.label,
-                ))?;
-            } else {
-                f.write_fmt(format_args!(
-                    "\n\x1b[1;34m{line_padding} {color}\\ {arrow} {label}\x1b[0m",
-                    color = label.kind.color(),
-                    arrow = label
-                        .kind
-                        .symbol()
-                        .repeat(label.span.end.1.max(label.span.start.1) + 1),
-                    label = label.label,
-                ))?;
-            }
-        }
-
-        f.write_char('\n')?;
-
-        if let Some(backtrace) = &self.backtrace {
-            f.write_fmt(format_args!("{backtrace}"));
-        }
-
-        Ok(())
+        print_labels(f, &self.labels, Some(&self.message), self.backtrace.clone())
     }
 }
 
@@ -340,12 +233,6 @@ impl NixSpan {
                     .rev()
                     .position(|c| c == '\n')
                     .unwrap_or(offset);
-
-            // let next_newline = file.content[last_newline..]
-            //     .chars()
-            //     .position(|c| c == '\n')
-            //     .unwrap_or(file.content.len() - last_newline)
-            //     + last_newline;
 
             let line = file.content[..=last_newline.min(file.content.len() - 1)]
                 .chars()
@@ -513,4 +400,154 @@ fn syntax_kind_to_string(kind: SyntaxKind) -> &'static str {
         SyntaxKind::NODE_HAS_ATTR => todo!(),
         _ => todo!(),
     }
+}
+
+fn print_labels(
+    f: &mut fmt::Formatter<'_>,
+    labels: &[NixLabel],
+    message: Option<&str>,
+    backtrace: Option<Rc<NixBacktrace>>,
+) -> fmt::Result {
+    assert!(!labels.is_empty());
+
+    let backtrace_padding = f.alternate().then_some("     ").unwrap_or_default();
+
+    let first_label = labels.first().unwrap();
+
+    if let Some(message) = message {
+        f.write_str(first_label.kind.color())?;
+        f.write_str(first_label.kind.text())?;
+        f.write_fmt(format_args!(":\x1b[0m {message}\n",))?;
+    }
+
+    f.write_fmt(format_args!(
+        "{backtrace_padding} \x1b[1;34m-->\x1b[0m {}:{}:{}\n",
+        first_label
+            .span
+            .file
+            .path
+            .strip_prefix(std::env::current_dir().unwrap())
+            .map(|p| format!("./{}", p.display()))
+            .unwrap_or(first_label.span.file.path.display().to_string()),
+        first_label.span.start.0,
+        first_label.span.start.1 + 1,
+    ))?;
+
+    let mut labels = labels.to_vec();
+    labels.sort_by_key(|v| v.span.start.0);
+
+    let max_line_width = labels.last().unwrap().span.end.0.to_string().len();
+    let line_padding = " ".repeat(max_line_width);
+    let dots = ".".repeat(max_line_width);
+
+    f.write_str(backtrace_padding)?;
+    f.write_str("\x1b[1;34m")?;
+    f.write_str(&line_padding)?;
+    f.write_str(" | \x1b[0m")?;
+
+    let mut last_line = usize::MAX;
+
+    for label in labels {
+        if last_line != usize::MAX && label.span.start.0.abs_diff(last_line) >= 2 {
+            f.write_str("\n\x1b[1;34m")?;
+            f.write_str(backtrace_padding)?;
+            f.write_str(&dots)?;
+            f.write_str(" |")?;
+        }
+
+        let is_singleline = label.span.start.0 == label.span.end.0;
+
+        if label.span.start.0 != last_line {
+            let start_line = label.span.start.0;
+            let offset_line = label.span.start.2;
+
+            if is_singleline {
+                let next_newline = label.span.file.content[offset_line..]
+                    .chars()
+                    .skip(1)
+                    .position(|c| c == '\n')
+                    .unwrap_or_else(|| label.span.file.content.len() - offset_line)
+                    + offset_line
+                    + 1;
+
+                f.write_fmt(format_args!(
+                    "\n{backtrace_padding}\x1b[1;34m{line: >max_line_width$} | \x1b[0m{context}",
+                    line = start_line,
+                    context = &label.span.file.content[offset_line..next_newline]
+                ))?;
+            } else {
+                let next_newline = {
+                    let mut line = start_line;
+                    label.span.file.content[offset_line..]
+                        .chars()
+                        .skip(1)
+                        .position(|c| match c {
+                            '\n' if line >= label.span.end.0 => true,
+                            '\n' => {
+                                line += 1;
+                                false
+                            }
+                            _ => false,
+                        })
+                        .unwrap_or_else(|| label.span.file.content.len() - offset_line)
+                        + offset_line
+                        + 1
+                };
+
+                let mut line = start_line;
+                f.write_fmt(format_args!(
+                    "\n{backtrace_padding}\x1b[1;34m{line: >max_line_width$} {color}/ \x1b[0m",
+                    color = label.kind.color()
+                ))?;
+                for c in label.span.file.content[offset_line..next_newline].chars() {
+                    if c == '\n' {
+                        line += 1;
+                        f.write_fmt(format_args!(
+                            "\n{backtrace_padding}\x1b[1;34m{line: >max_line_width$} {color}| \x1b[0m",
+                            color = label.kind.color()
+                        ))?;
+                        continue;
+                    }
+
+                    f.write_char(c)?;
+                }
+            }
+
+            last_line = label.span.end.0;
+        }
+
+        if is_singleline {
+            f.write_fmt(format_args!(
+                "\n{backtrace_padding}\x1b[1;34m{line_padding} | \x1b[0m{spaces}{color}{arrow} {label}\x1b[0m",
+                spaces = " ".repeat(label.span.start.1),
+                color = label.kind.color(),
+                arrow = label
+                    .kind
+                    .symbol()
+                    .repeat(label.span.start.1.abs_diff(label.span.end.1) + 1),
+                label = label.label,
+            ))?;
+        } else {
+            f.write_fmt(format_args!(
+                "\n{backtrace_padding}\x1b[1;34m{line_padding} {color}\\ {arrow} {label}\x1b[0m",
+                color = label.kind.color(),
+                arrow = label.kind.symbol().repeat(label.span.end.1 + 1),
+                label = label.label,
+            ))?;
+        }
+    }
+
+    f.write_char('\n')?;
+
+    if let Some(backtrace) = &backtrace {
+        if f.alternate() {
+            f.write_char('\n')?;
+        } else if std::env::var(BACKTRACE_ENV).is_ok() {
+            f.write_str("\nBACKTRACE: \n")?;
+        }
+
+        f.write_fmt(format_args!("{backtrace:#}"))?;
+    }
+
+    Ok(())
 }

@@ -3,6 +3,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 use rnix::ast::{self, AstToken, HasEntry};
+use rowan::ast::AstNode;
 
 use crate::result::{NixBacktrace, NixSpan};
 use crate::value::{NixLambda, NixList};
@@ -32,32 +33,10 @@ impl Scope {
             todo!("Error handling")
         };
 
-        let attr = self.resolve_attr(backtrace, &last_attr_path)?;
-
-        // if attr.starts_with("crossSystem") {
-        //     println!(
-        //         "{}",
-        //         NixError {
-        //             message: format!("Tracing insert_to_attrset: {:#?}", self),
-        //             labels: vec![
-        //                 NixLabel::new(
-        //                     NixSpan::from_ast_node(&self.file, &attrpath).into(),
-        //                     NixLabelMessage::Custom(attr.clone()),
-        //                     NixLabelKind::Help
-        //                 ),
-        //                 NixLabel::new(
-        //                     NixSpan::from_ast_node(&self.file, &attr_value).into(),
-        //                     NixLabelMessage::Custom(attr.clone()),
-        //                     NixLabelKind::Help
-        //                 ),
-        //             ],
-        //             backtrace: None
-        //         }
-        //     );
-        // }
+        let attr = self.resolve_attr(backtrace.clone(), &last_attr_path)?;
 
         let child = LazyNixValue::Pending(
-            Rc::new(NixSpan::from_ast_node(&self.file, &attr_value)),
+            self.new_backtrace(backtrace.clone(), &attr_value),
             self.clone().new_child(),
             attr_value,
         )
@@ -82,7 +61,7 @@ impl Scope {
                 let from = entry.from().map(|from| {
                     (
                         LazyNixValue::Pending(
-                            Rc::new(NixSpan::from_ast_node(&self.file, &from)),
+                            self.new_backtrace(backtrace.clone(), &from),
                             self.clone(),
                             from.expr().unwrap(),
                         )
@@ -104,7 +83,7 @@ impl Scope {
 
                             LazyNixValue::new_eval(
                                 self.clone(),
-                                NixSpan::from_ast_node(&self.file, &from_expr).into(),
+                                self.new_backtrace(backtrace.clone(), &from_expr),
                                 Box::new(move |backtrace, scope| {
                                     from.resolve(backtrace.clone())?
                                         .borrow()
@@ -151,7 +130,7 @@ impl Scope {
 
                             LazyNixValue::new_eval(
                                 self.clone(),
-                                Rc::new(NixSpan::from_ast_node(&self.file, &attr_node)),
+                                self.new_backtrace(backtrace.clone(), &attr_node),
                                 Box::new(move |backtrace, scope| {
                                     let Some(value) = scope.get_variable(attr.clone()) else {
                                         return Err(NixError::from_message(
@@ -187,6 +166,17 @@ impl Scope {
         }
     }
 
+    fn new_backtrace(
+        self: &Rc<Self>,
+        backtrace: Rc<NixBacktrace>,
+        node: &impl AstNode,
+    ) -> Rc<NixBacktrace> {
+        Rc::new(NixBacktrace(
+            Rc::new(NixSpan::from_ast_node(&self.file, node)),
+            Some(backtrace),
+        ))
+    }
+
     pub fn visit_expr(self: &Rc<Self>, backtrace: Rc<NixBacktrace>, node: ast::Expr) -> NixResult {
         match node {
             ast::Expr::Apply(node) => self.visit_apply(backtrace, node),
@@ -217,7 +207,10 @@ impl Scope {
         backtrace: Rc<NixBacktrace>,
         node: ast::Apply,
     ) -> NixResult {
-        let lambda = self.visit_expr(backtrace.clone(), node.lambda().unwrap())?;
+        let lambda = self.visit_expr(
+            self.new_backtrace(backtrace.clone(), &node),
+            node.lambda().unwrap(),
+        )?;
 
         let lambda = lambda.borrow();
 
@@ -263,25 +256,10 @@ impl Scope {
                             let varname = varname.text();
 
                             if let Some(unused) = unused.as_mut() {
-                                unused.swap_remove(
-                                    unused.iter().position(|&key| key == varname).expect("Hola"),
-                                );
+                                if let Some(idx) = unused.iter().position(|&key| key == varname) {
+                                    unused.swap_remove(idx);
+                                }
                             }
-
-                            // if varname.starts_with("crossSystem") {
-                            //     println!(
-                            //         "{}",
-                            //         NixError {
-                            //             labels: vec![NixLabel::from_syntax_node(
-                            //                 &scope.file,
-                            //                 entry.ident().unwrap().syntax(),
-                            //                 NixLabelMessage::Custom(varname.to_owned()),
-                            //                 NixLabelKind::Help
-                            //             ),],
-                            //             message: format!("Tracing pattern params")
-                            //         }
-                            //     );
-                            // }
 
                             let var = if let Some(var) = argument.get(varname).cloned() {
                                 var
@@ -311,10 +289,10 @@ impl Scope {
                                 .set_variable(
                                     param.clone(),
                                     LazyNixValue::Pending(
-                                        Rc::new(NixSpan::from_ast_node(
-                                            &self.file,
+                                        self.new_backtrace(
+                                            backtrace.clone(),
                                             &node.argument().unwrap()
-                                        )),
+                                        ),
                                         self.clone(),
                                         node.argument().unwrap()
                                     )
@@ -539,21 +517,6 @@ impl Scope {
         let node = node.ident_token().unwrap();
         let varname = node.text().to_string();
 
-        // if varname.starts_with("crossSystem") {
-        //     println!(
-        //         "{}",
-        //         NixError::from_message(
-        //             NixLabel::new(
-        //                 &self.file,
-        //                 &node,
-        //                 NixLabelMessage::Custom(varname.clone()),
-        //                 NixLabelKind::Help
-        //             ),
-        //             "Tracing visit_ident"
-        //         )
-        //     );
-        // }
-
         self.get_variable(varname.clone())
             .ok_or_else(|| {
                 NixError::from_message(
@@ -625,12 +588,16 @@ impl Scope {
         node: ast::LetIn,
     ) -> NixResult {
         for entry in node.entries() {
-            self.insert_entry_to_attrset(backtrace.clone(), self.variables.clone(), entry)?;
+            self.insert_entry_to_attrset(
+                self.new_backtrace(backtrace.clone(), &entry),
+                self.variables.clone(),
+                entry,
+            )?;
         }
 
         let body = node.body().unwrap();
 
-        self.visit_expr(backtrace, body)
+        self.visit_expr(self.new_backtrace(backtrace, &body), body)
     }
 
     pub fn visit_list(self: &Rc<Self>, backtrace: Rc<NixBacktrace>, node: ast::List) -> NixResult {
@@ -638,7 +605,7 @@ impl Scope {
             node.items()
                 .map(|expr| {
                     LazyNixValue::Pending(
-                        Rc::new(NixSpan::from_ast_node(&self.file, &expr)),
+                        self.new_backtrace(backtrace.clone(), &expr),
                         self.clone(),
                         expr,
                     )

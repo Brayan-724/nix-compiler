@@ -71,7 +71,10 @@ pub fn resolve_flake(backtrace: Rc<NixBacktrace>, result: NixValueWrapped) -> Ni
 
     let scope = scope.clone().new_child();
     let outputs = LazyNixValue::Pending(
-        Rc::new(NixSpan::from_ast_node(&scope.file, expr)),
+        Rc::new(NixBacktrace(
+            Rc::new(NixSpan::from_ast_node(&scope.file, expr)),
+            Some(backtrace.clone()),
+        )),
         scope.clone(),
         expr.clone(),
     )

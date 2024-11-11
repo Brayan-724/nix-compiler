@@ -47,7 +47,6 @@ fn main() {
             std::process::exit(1);
         });
 
-    println!("Result (Expanded): {:?}", outputs.borrow());
     println!("Result (Expanded): {:#}", outputs.borrow());
     println!("Result (Minimized): {}", outputs.borrow());
 }

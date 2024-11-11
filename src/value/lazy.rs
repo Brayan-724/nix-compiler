@@ -6,16 +6,16 @@ use std::{fmt, mem};
 use rnix::ast;
 
 use crate::{
-    AsAttrSet, NixBacktrace, NixError, NixLabel, NixLabelKind, NixLabelMessage, NixResult, NixSpan,
+    AsAttrSet, NixBacktrace, NixError, NixLabel, NixLabelKind, NixLabelMessage, NixResult,
     NixValueWrapped, NixVar, Scope,
 };
 
 #[derive(Clone)]
 pub enum LazyNixValue {
     Concrete(NixValueWrapped),
-    Pending(Rc<NixSpan>, Rc<Scope>, ast::Expr),
+    Pending(Rc<NixBacktrace>, Rc<Scope>, ast::Expr),
     Eval(
-        Rc<NixSpan>,
+        Rc<NixBacktrace>,
         Rc<Scope>,
         Rc<RefCell<Option<Box<dyn FnOnce(Rc<NixBacktrace>, Rc<Scope>) -> NixResult>>>>,
     ),
@@ -63,7 +63,7 @@ impl LazyNixValue {
 impl LazyNixValue {
     pub fn new_eval(
         scope: Rc<Scope>,
-        backtrace: Rc<NixSpan>,
+        backtrace: Rc<NixBacktrace>,
         fun: Box<dyn FnOnce(Rc<NixBacktrace>, Rc<Scope>) -> NixResult>,
     ) -> Self {
         LazyNixValue::Eval(backtrace, scope, Rc::new(RefCell::new(Option::Some(fun))))
@@ -88,25 +88,26 @@ impl LazyNixValue {
 
         let backtrace = match *this.borrow() {
             LazyNixValue::Concrete(_) => unreachable!(),
-            LazyNixValue::Pending(ref span, ..) => {
-                Rc::new(NixBacktrace(span.clone(), Some(backtrace)))
-            }
-            LazyNixValue::Eval(ref span, ..) => {
-                Rc::new(NixBacktrace(span.clone(), Some(backtrace)))
-            }
-            LazyNixValue::Resolving(ref backtrace) => {
+            LazyNixValue::Pending(ref backtrace, ..) => backtrace.clone(),
+            LazyNixValue::Eval(ref backtrace, ..) => backtrace.clone(),
+            LazyNixValue::Resolving(ref def_backtrace) => {
                 let label = NixLabelMessage::Empty;
                 let kind = NixLabelKind::Error;
 
-                let NixBacktrace(span, backtrace) = &**backtrace;
+                let NixBacktrace(span, def_backtrace) = &**def_backtrace;
 
                 let label = NixLabel::new(span.clone(), label, kind);
+                let called_label = NixLabel::new(
+                    backtrace.0.clone(),
+                    NixLabelMessage::Custom("Called from here".to_string()),
+                    NixLabelKind::Help,
+                );
 
                 return Err(NixError {
                     message: "Infinite recursion detected. Tried to get a value that is resolving"
                         .to_owned(),
-                    labels: vec![label],
-                    backtrace: backtrace.clone(),
+                    labels: vec![label, called_label],
+                    backtrace: def_backtrace.clone(),
                 });
             }
         };
@@ -161,10 +162,21 @@ impl LazyNixValue {
                     var.resolve(backtrace.clone())?;
                 }
             }
+        } else if let Some(list) = value.borrow().as_list() {
+            list.0
+                .iter()
+                .map(|var| {
+                    if recursive {
+                        var.resolve_set(true, backtrace.clone())?;
+                    } else {
+                        var.resolve(backtrace.clone())?;
+                    }
 
-            Ok(value)
-        } else {
-            Ok(value)
+                    Ok(())
+                })
+                .collect::<Result<(), _>>()?;
         }
+
+        Ok(value)
     }
 }
