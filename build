@@ -130,6 +130,7 @@ def "main help" [subhelp?: string, ...args] {
     [name args desc];
     [example "" "Run all examples"]
     [example " <EXAMPLE>" "Run a single example if it is provided"]
+    [sync "" "Check parity with nix builtins"]
     [help "" "Show this message"]
     [help " <TOPIC>" "Show expanded help of TOPIC. See `More help`"]
   ]
@@ -224,6 +225,34 @@ def "main example" [example?: string, --minimal, --get-errors -e] {
       print -n "\n"
     }
   }
+}
+
+def "main sync" [] {
+  let remote = nix-instantiate --eval -E builtins | parse --regex '(\w+) = ' | get capture0 | uniq | sort
+  let local = cargo run -- -e builtins | parse -r '(\w+) =' | get capture0 | uniq | sort
+
+  let total = $remote | length
+
+  mut implemented = 0
+
+  for attr in $remote {
+    if ($local | find $attr | is-empty) {
+      print -n $"(ansi rb)❌ "
+    } else {
+      print -n $"(ansi gb)✅ "
+      $implemented += 1
+    }
+
+    print -n $attr
+
+    ansi reset | print
+  }
+
+  let not_implemented = $total - $implemented
+
+  print $"\nTotal       : ($total)"
+  print $"Implemented : ($implemented)"
+  print $"To do       : ($not_implemented)"
 }
 
 def main [] {
