@@ -186,4 +186,7 @@ pub fn try_eval(backtrace: Rc<NixBacktrace>, argument: (Rc<Scope>, ast::Expr)) -
     return Ok(NixValue::AttrSet(result).wrap());
 }
 
-gen_builtins! {}
+gen_builtins! {
+    nixVersion = NixValue::String("2.24.9".to_owned());
+    null = NixValue::Null;
+}

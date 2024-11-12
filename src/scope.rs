@@ -44,6 +44,7 @@ impl Scope {
 
         insert!(globals; abort = builtins::Abort::generate());
         insert!(globals; import = builtins::Import::generate());
+        insert!(globals; null = NixValue::Null);
         insert!(globals; toString = builtins::ToString::generate());
         insert!(globals; builtins = builtins);
 
