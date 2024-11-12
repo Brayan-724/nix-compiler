@@ -597,7 +597,9 @@ impl Scope {
 
         let body = node.body().unwrap();
 
-        self.clone().new_child().visit_expr(self.new_backtrace(backtrace, &body), body)
+        self.clone()
+            .new_child()
+            .visit_expr(self.new_backtrace(backtrace, &body), body)
     }
 
     pub fn visit_list(self: &Rc<Self>, backtrace: Rc<NixBacktrace>, node: ast::List) -> NixResult {
