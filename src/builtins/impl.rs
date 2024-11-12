@@ -4,7 +4,6 @@ use std::rc::Rc;
 
 use nix_macros::{builtin, gen_builtins};
 use rnix::ast;
-// use rowan::ast::AstNode;
 
 use crate::value::{NixLambda, NixList};
 use crate::{AsAttrSet, AsString, LazyNixValue, NixBacktrace, NixValue, NixValueWrapped, Scope};
