@@ -24,13 +24,13 @@ pub fn builtin(
 }
 
 #[proc_macro]
-pub fn gen_builtins(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    gen_builtins_impl()
+pub fn gen_builtins(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    gen_builtins_impl(input.into())
         .unwrap_or_else(|e| e.to_compile_error())
         .into()
 }
 
-fn gen_builtins_impl() -> Result<TokenStream, Error> {
+fn gen_builtins_impl(input: TokenStream) -> Result<TokenStream, Error> {
     let builtins = get_builtins()?
         .split(";")
         .map(|builtin| {
@@ -40,9 +40,6 @@ fn gen_builtins_impl() -> Result<TokenStream, Error> {
         })
         .collect::<Vec<_>>();
 
-    let nix_version_key = "nixVersion";
-    let nix_version = "2.24.9";
-
     Ok(quote! {
         pub fn get_builtins() -> NixValue {
             use std::collections::HashMap;
@@ -50,12 +47,21 @@ fn gen_builtins_impl() -> Result<TokenStream, Error> {
 
             let mut builtins = HashMap::new();
 
-            builtins.insert(
-                #nix_version_key.to_owned(),
-                NixValue::String(String::from(#nix_version)).wrap_var(),
-            );
-
             #(#builtins;)*
+
+            {
+                macro_rules! insert {
+                    ($($name:ident = $value:expr);* $(;)?) => {
+                        $(
+                        builtins.insert(stringify!($name).to_owned(), $value.wrap_var());
+                        )*
+                    }
+                }
+
+                insert!(
+                    #input
+                );
+            }
 
             NixValue::AttrSet(builtins)
         }
