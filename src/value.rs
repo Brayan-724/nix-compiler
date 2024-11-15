@@ -267,6 +267,10 @@ impl NixValue {
     pub fn is_attr_set(&self) -> bool {
         matches!(self, NixValue::AttrSet(_))
     }
+
+    pub fn is_string(&self) -> bool {
+        matches!(self, NixValue::String(_))
+    }
 }
 
 impl NixLambda {
