@@ -7,8 +7,8 @@ use rnix::ast;
 
 use crate::value::{NixLambda, NixList};
 use crate::{
-    AsAttrSet, AsString, LazyNixValue, NixBacktrace, NixResult, NixSpan, NixValue, NixValueWrapped,
-    NixVar, Scope,
+    AsAttrSet, AsString, LazyNixValue, NixBacktrace, NixResult, NixValue, NixValueWrapped, NixVar,
+    Scope,
 };
 
 #[builtin]
@@ -240,6 +240,8 @@ pub fn try_eval(backtrace: Rc<NixBacktrace>, argument: (Rc<Scope>, ast::Expr)) {
 }
 
 gen_builtins! {
+    false = NixValue::Bool(false);
     nixVersion = NixValue::String("2.24.9".to_owned());
     null = NixValue::Null;
+    true = NixValue::Bool(true);
 }
