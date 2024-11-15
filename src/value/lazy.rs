@@ -6,9 +6,11 @@ use std::{fmt, mem};
 use rnix::ast;
 
 use crate::{
-    AsAttrSet, NixBacktrace, NixError, NixLabel, NixLabelKind, NixLabelMessage, NixResult,
+    AsAttrSet, NixBacktrace, NixError, NixLabel, NixLabelKind, NixLabelMessage, NixResult, NixSpan,
     NixValueWrapped, NixVar, Scope,
 };
+
+use super::NixLambda;
 
 #[derive(Clone)]
 pub enum LazyNixValue {
@@ -67,6 +69,36 @@ impl LazyNixValue {
         fun: Box<dyn FnOnce(Rc<NixBacktrace>, Rc<Scope>) -> NixResult>,
     ) -> Self {
         LazyNixValue::Eval(backtrace, scope, Rc::new(RefCell::new(Option::Some(fun))))
+    }
+
+    pub fn new_callback_eval(
+        backtrace: Rc<NixBacktrace>,
+        callback: NixLambda,
+        value: NixVar,
+    ) -> Self {
+        let NixLambda(scope, param, expr) = callback.clone();
+        let span = Rc::new(NixSpan::from_ast_node(&scope.file, &expr));
+
+        LazyNixValue::new_eval(
+            scope.new_child(),
+            Rc::new(NixBacktrace(span.clone(), Some(backtrace))),
+            Box::new(move |backtrace, scope| {
+                match param {
+                    crate::NixLambdaParam::Ident(ident) => {
+                        scope.set_variable(ident, value);
+                    }
+                    crate::NixLambdaParam::Pattern(_) => {
+                        return Err(crate::NixError::todo(
+                            span,
+                            "Pattern lambda param",
+                            Some(backtrace),
+                        ))
+                    }
+                };
+
+                scope.visit_expr(backtrace, expr)
+            }),
+        )
     }
 
     pub fn wrap_var(self) -> NixVar {

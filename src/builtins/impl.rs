@@ -36,31 +36,30 @@ pub fn compare_versions(first_arg: String, second_arg: String) {
 }
 
 #[builtin]
+pub fn concat_map(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
+    let mut out = vec![];
+
+    for item in list.0.iter() {
+        let item = callback.call(backtrace.clone(), item.clone())?;
+
+        let Some(item) = item.borrow().as_list() else {
+            todo!("Error handling");
+        };
+        
+        out.extend_from_slice(&item.0)
+    }
+
+    Ok(NixValue::List(NixList(Rc::new(out))).wrap())
+}
+
+#[builtin]
 pub fn gen_list(backtrace: Rc<NixBacktrace>, callback: NixLambda, size: i64) {
     let out = (0..size)
         .map(|i| {
-            let NixLambda(scope, param, expr) = callback.clone();
-            let span = Rc::new(NixSpan::from_ast_node(&scope.file, &expr));
-
-            LazyNixValue::new_eval(
-                scope.new_child(),
-                Rc::new(NixBacktrace(span.clone(), Some(backtrace.clone()))),
-                Box::new(move |backtrace, scope| {
-                    match param {
-                        crate::NixLambdaParam::Ident(ident) => {
-                            scope.set_variable(ident, NixValue::Int(i).wrap_var());
-                        }
-                        crate::NixLambdaParam::Pattern(_) => {
-                            return Err(crate::NixError::todo(
-                                span,
-                                "Pattern lambda param",
-                                Some(backtrace),
-                            ))
-                        }
-                    };
-
-                    scope.visit_expr(backtrace, expr)
-                }),
+            LazyNixValue::new_callback_eval(
+                backtrace.clone(),
+                callback.clone(),
+                NixValue::Int(i).wrap_var(),
             )
             .wrap_var()
         })

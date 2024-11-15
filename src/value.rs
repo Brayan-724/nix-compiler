@@ -15,6 +15,7 @@ use rnix::ast;
 
 use crate::builtins::NixBuiltin;
 use crate::scope::Scope;
+use crate::{NixBacktrace, NixResult, NixSpan};
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum NixLambdaParam {
@@ -259,6 +260,29 @@ impl NixValue {
             NixValue::String(string) => Some(PathBuf::from(string)),
             _ => None,
         }
+    }
+}
+
+impl NixLambda {
+
+    pub fn call(&self, backtrace: Rc<NixBacktrace>, value: NixVar) -> NixResult {
+        let NixLambda(scope, param, expr) = self;
+        let span = Rc::new(NixSpan::from_ast_node(&scope.file, expr));
+
+        match param {
+            crate::NixLambdaParam::Ident(ident) => {
+                scope.set_variable(ident.clone(), value);
+            }
+            crate::NixLambdaParam::Pattern(_) => {
+                return Err(crate::NixError::todo(
+                    span,
+                    "Pattern lambda param",
+                    Some(backtrace.clone()),
+                ))
+            }
+        };
+
+        scope.visit_expr(backtrace, expr.clone())
     }
 }
 
