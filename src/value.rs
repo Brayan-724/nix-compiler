@@ -32,12 +32,13 @@ pub struct NixList(pub Rc<Vec<NixVar>>);
 pub type NixAttrSet = HashMap<String, NixVar>;
 
 /// https://nix.dev/manual/nix/2.24/language/types
-#[derive(Default, PartialEq, Eq)]
+#[derive(Default, PartialEq)]
 pub enum NixValue {
     AttrSet(NixAttrSet),
     Bool(bool),
     /// https://nix.dev/manual/nix/2.24/language/builtins
     Builtin(Rc<Box<dyn NixBuiltin>>),
+    Float(f64),
     Int(i64),
     Lambda(NixLambda),
     List(NixList),
@@ -64,6 +65,7 @@ impl fmt::Debug for NixValue {
             NixValue::Bool(true) => f.write_str("true"),
             NixValue::Bool(false) => f.write_str("false"),
             NixValue::Builtin(builtin) => fmt::Debug::fmt(builtin, f),
+            NixValue::Float(val) => f.write_str(&val.to_string()),
             NixValue::Int(val) => f.write_str(&val.to_string()),
             NixValue::Lambda(..) => f.write_str("<lamda>"),
             NixValue::List(list) => {
@@ -144,6 +146,7 @@ impl fmt::Display for NixValue {
             NixValue::Bool(true) => f.write_str("true"),
             NixValue::Bool(false) => f.write_str("false"),
             NixValue::Builtin(builtin) => fmt::Display::fmt(&builtin, f),
+            NixValue::Float(val) => f.write_str(&val.to_string()),
             NixValue::Int(val) => f.write_str(&val.to_string()),
             NixValue::Lambda(..) => f.write_str("<lamda>"),
             NixValue::List(list) => {
@@ -270,6 +273,10 @@ impl NixValue {
 
     pub fn is_function(&self) -> bool {
         matches!(self, NixValue::Lambda(_))
+    }
+
+    pub fn is_float(&self) -> bool {
+        matches!(self, NixValue::Float(_))
     }
 
     pub fn is_int(&self) -> bool {

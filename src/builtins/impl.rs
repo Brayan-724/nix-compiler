@@ -145,6 +145,11 @@ pub fn is_function(argument: NixValueWrapped) {
 }
 
 #[builtin]
+pub fn is_float(argument: NixValueWrapped) {
+    Ok(NixValue::Bool(argument.borrow().is_float()).wrap())
+}
+
+#[builtin]
 pub fn is_int(argument: NixValueWrapped) {
     Ok(NixValue::Bool(argument.borrow().is_int()).wrap())
 }
