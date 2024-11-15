@@ -156,7 +156,7 @@ pub fn is_int(argument: NixValueWrapped) {
 
 #[builtin()]
 pub fn is_list(argument: NixValueWrapped) {
-    Ok(NixValue::Bool(argument.borrow().as_list().is_some()).wrap())
+    Ok(NixValue::Bool(argument.borrow().is_list()).wrap())
 }
 
 #[builtin()]
