@@ -9,12 +9,12 @@ use crate::value::{NixLambda, NixList};
 use crate::{AsAttrSet, AsString, LazyNixValue, NixBacktrace, NixValue, NixValueWrapped, Scope};
 
 #[builtin]
-pub fn abort(message: String) -> ! {
+pub fn abort(message: String) {
     panic!("Aborting: {message}")
 }
 
 #[builtin]
-pub fn compare_versions(first_arg: String, second_arg: String) -> NixResult {
+pub fn compare_versions(first_arg: String, second_arg: String) {
     let first_arg = first_arg.split(".");
     let second_arg = second_arg.split(".");
 
@@ -67,7 +67,7 @@ pub fn gen_list(callback: NixLambda, size: i64) {
 }
 
 #[builtin()]
-pub fn get_env(env: String) -> NixResult {
+pub fn get_env(env: String) {
     let value = std::env::var(env).unwrap_or_default();
 
     Ok(NixValue::String(value).wrap())
@@ -121,18 +121,14 @@ pub fn length(list: NixList) {
 }
 
 #[builtin()]
-pub fn path_exists(path: PathBuf) -> NixResult {
+pub fn path_exists(path: PathBuf) {
     let exists = path.try_exists().is_ok_and(|x| x);
 
     Ok(NixValue::Bool(exists).wrap())
 }
 
 #[builtin()]
-pub fn remove_attrs(
-    backtrace: Rc<NixBacktrace>,
-    attrset: NixValueWrapped,
-    attrs: NixValueWrapped,
-) -> NixResult {
+pub fn remove_attrs(backtrace: Rc<NixBacktrace>, attrset: NixValueWrapped, attrs: NixValueWrapped) {
     if !attrset.borrow().is_attr_set() {
         todo!("Error handling")
     }
@@ -161,12 +157,12 @@ pub fn remove_attrs(
 }
 
 #[builtin()]
-pub fn to_string(argument: String) -> NixResult {
+pub fn to_string(argument: String) {
     Ok(NixValue::String(argument).wrap())
 }
 
 #[builtin()]
-pub fn try_eval(backtrace: Rc<NixBacktrace>, argument: (Rc<Scope>, ast::Expr)) -> NixResult {
+pub fn try_eval(backtrace: Rc<NixBacktrace>, argument: (Rc<Scope>, ast::Expr)) {
     let (scope, node) = argument;
 
     let Ok(argument) = scope.visit_expr(backtrace, node) else {
