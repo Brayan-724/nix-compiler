@@ -7,7 +7,8 @@ use rnix::ast;
 
 use crate::value::{NixLambda, NixList};
 use crate::{
-    AsAttrSet, AsString, LazyNixValue, NixBacktrace, NixSpan, NixValue, NixValueWrapped, Scope,
+    AsAttrSet, AsString, LazyNixValue, NixBacktrace, NixResult, NixSpan, NixValue, NixValueWrapped,
+    NixVar, Scope,
 };
 
 #[builtin]
@@ -122,9 +123,44 @@ pub fn length(list: NixList) {
     Ok(NixValue::Int(list.0.len() as i64).wrap())
 }
 
-// #[builtin]
-// pub fn list_to_attrs() {
-// }
+#[builtin]
+pub fn list_to_attrs(backtrace: Rc<NixBacktrace>, list: NixList) {
+    let out = list
+        .0
+        .iter()
+        .map(|item| {
+            let (name, value) = {
+                let item = item.resolve(backtrace.clone())?;
+                let item = item.borrow();
+
+                let Some(set) = item.as_attr_set() else {
+                    todo!("Error handling!");
+                };
+
+                (set.get("name").cloned(), set.get("value").cloned())
+            };
+
+            let Some(name) = name else {
+                todo!("Error handling!");
+            };
+
+            let name = name.resolve(backtrace.clone())?;
+
+            let name = match &*name.borrow() {
+                NixValue::String(ref s) => s.clone(),
+                _ => todo!("Error handling!"),
+            };
+
+            let Some(value) = value else {
+                todo!("Error handling!");
+            };
+
+            Ok((name, value))
+        })
+        .collect::<NixResult<HashMap<String, NixVar>>>()?;
+
+    Ok(NixValue::AttrSet(out).wrap())
+}
 
 #[builtin()]
 pub fn path_exists(path: PathBuf) {

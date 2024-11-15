@@ -6,7 +6,6 @@ mod scope;
 mod value;
 
 use std::env;
-use std::path::PathBuf;
 use std::rc::Rc;
 
 pub use builtins::{NixBuiltin, NixBuiltinInfo};
