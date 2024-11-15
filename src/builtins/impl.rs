@@ -133,9 +133,15 @@ pub fn import(backtrace: Rc<NixBacktrace>, argument: NixValueWrapped) {
 pub fn is_attrs(argument: NixValueWrapped) {
     Ok(NixValue::Bool(argument.borrow().is_attr_set()).wrap())
 }
+
 #[builtin]
 pub fn is_bool(argument: NixValueWrapped) {
     Ok(NixValue::Bool(argument.borrow().as_bool().is_some()).wrap())
+}
+
+#[builtin]
+pub fn is_function(argument: NixValueWrapped) {
+    Ok(NixValue::Bool(argument.borrow().is_function()).wrap())
 }
 
 #[builtin()]
