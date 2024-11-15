@@ -129,6 +129,11 @@ pub fn import(backtrace: Rc<NixBacktrace>, argument: NixValueWrapped) {
     Scope::import_path(backtrace, path)
 }
 
+#[builtin]
+pub fn is_bool(argument: NixValueWrapped) {
+    Ok(NixValue::Bool(argument.borrow().as_bool().is_some()).wrap())
+}
+
 #[builtin()]
 pub fn is_list(argument: NixValueWrapped) {
     Ok(NixValue::Bool(argument.borrow().as_list().is_some()).wrap())
