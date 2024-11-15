@@ -159,6 +159,11 @@ pub fn is_null(argument: NixValueWrapped) {
     Ok(NixValue::Bool(argument.borrow().is_null()).wrap())
 }
 
+#[builtin()]
+pub fn is_path(argument: NixValueWrapped) {
+    Ok(NixValue::Bool(argument.borrow().is_path()).wrap())
+}
+
 #[builtin]
 pub fn is_string(argument: NixValueWrapped) {
     Ok(NixValue::Bool(argument.borrow().is_string()).wrap())

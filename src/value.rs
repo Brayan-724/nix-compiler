@@ -280,6 +280,10 @@ impl NixValue {
         matches!(self, NixValue::Null)
     }
 
+    pub fn is_path(&self) -> bool {
+        matches!(self, NixValue::Path(_))
+    }
+
     pub fn is_string(&self) -> bool {
         matches!(self, NixValue::String(_))
     }
