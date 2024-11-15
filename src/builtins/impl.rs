@@ -6,7 +6,9 @@ use nix_macros::{builtin, gen_builtins};
 use rnix::ast;
 
 use crate::value::{NixLambda, NixList};
-use crate::{AsAttrSet, AsString, LazyNixValue, NixBacktrace, NixValue, NixValueWrapped, Scope};
+use crate::{
+    AsAttrSet, AsString, LazyNixValue, NixBacktrace, NixSpan, NixValue, NixValueWrapped, Scope,
+};
 
 #[builtin]
 pub fn abort(message: String) {
@@ -33,33 +35,33 @@ pub fn compare_versions(first_arg: String, second_arg: String) {
 }
 
 #[builtin]
-pub fn gen_list(callback: NixLambda, size: i64) {
+pub fn gen_list(backtrace: Rc<NixBacktrace>, callback: NixLambda, size: i64) {
     let out = (0..size)
-        .map(|_| {
-            let NixLambda(_, _, _) = callback.clone();
+        .map(|i| {
+            let NixLambda(scope, param, expr) = callback.clone();
+            let span = Rc::new(NixSpan::from_ast_node(&scope.file, &expr));
 
-            // LazyNixValue::new_eval(
-            //     scope.new_child(),
-            //     Box::new(move |scope| {
-            //         match param {
-            //             crate::NixLambdaParam::Ident(ident) => {
-            //                 scope.set_variable(ident, NixValue::Int(i).wrap_var());
-            //             },
-            //             crate::NixLambdaParam::Pattern(_) => {
-            //                 return Err(NixError::todo(
-            //                     &scope.file,
-            //                     expr.syntax().clone().into(),
-            //                     "Pattern lambda param",
-            //                 ))
-            //             }
-            //         };
-            //
-            //         scope.visit_expr(expr)
-            //     }),
-            // )
-            // .wrap_var()
-            // LazyNixValue::Pending(scope, expr).wrap_var()
-            NixValue::Null.wrap_var()
+            LazyNixValue::new_eval(
+                scope.new_child(),
+                Rc::new(NixBacktrace(span.clone(), Some(backtrace.clone()))),
+                Box::new(move |backtrace, scope| {
+                    match param {
+                        crate::NixLambdaParam::Ident(ident) => {
+                            scope.set_variable(ident, NixValue::Int(i).wrap_var());
+                        }
+                        crate::NixLambdaParam::Pattern(_) => {
+                            return Err(crate::NixError::todo(
+                                span,
+                                "Pattern lambda param",
+                                Some(backtrace),
+                            ))
+                        }
+                    };
+
+                    scope.visit_expr(backtrace, expr)
+                }),
+            )
+            .wrap_var()
         })
         .collect::<Vec<_>>();
 
@@ -119,6 +121,10 @@ pub fn is_list(argument: NixValueWrapped) {
 pub fn length(list: NixList) {
     Ok(NixValue::Int(list.0.len() as i64).wrap())
 }
+
+// #[builtin]
+// pub fn list_to_attrs() {
+// }
 
 #[builtin()]
 pub fn path_exists(path: PathBuf) {
