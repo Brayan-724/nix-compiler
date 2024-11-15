@@ -263,6 +263,10 @@ impl NixValue {
             _ => None,
         }
     }
+
+    pub fn is_attr_set(&self) -> bool {
+        matches!(self, NixValue::AttrSet(_))
+    }
 }
 
 impl NixLambda {
@@ -315,10 +319,6 @@ impl AsString for NixValue {
 pub trait AsAttrSet {
     fn as_attr_set(&self) -> Option<&HashMap<String, NixVar>>;
     fn as_attr_set_mut(&mut self) -> Option<&mut HashMap<String, NixVar>>;
-
-    fn is_attr_set(&self) -> bool {
-        self.as_attr_set().is_some()
-    }
 }
 
 impl AsAttrSet for NixValue {

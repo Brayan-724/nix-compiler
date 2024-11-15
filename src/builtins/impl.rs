@@ -130,6 +130,10 @@ pub fn import(backtrace: Rc<NixBacktrace>, argument: NixValueWrapped) {
 }
 
 #[builtin]
+pub fn is_attrs(argument: NixValueWrapped) {
+    Ok(NixValue::Bool(argument.borrow().is_attr_set()).wrap())
+}
+#[builtin]
 pub fn is_bool(argument: NixValueWrapped) {
     Ok(NixValue::Bool(argument.borrow().as_bool().is_some()).wrap())
 }
