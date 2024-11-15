@@ -154,6 +154,11 @@ pub fn is_list(argument: NixValueWrapped) {
     Ok(NixValue::Bool(argument.borrow().as_list().is_some()).wrap())
 }
 
+#[builtin()]
+pub fn is_null(argument: NixValueWrapped) {
+    Ok(NixValue::Bool(argument.borrow().is_null()).wrap())
+}
+
 #[builtin]
 pub fn is_string(argument: NixValueWrapped) {
     Ok(NixValue::Bool(argument.borrow().is_string()).wrap())
