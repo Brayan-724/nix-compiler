@@ -272,6 +272,10 @@ impl NixValue {
         matches!(self, NixValue::Lambda(_))
     }
 
+    pub fn is_int(&self) -> bool {
+        matches!(self, NixValue::Int(_))
+    }
+
     pub fn is_string(&self) -> bool {
         matches!(self, NixValue::String(_))
     }
