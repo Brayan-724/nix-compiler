@@ -29,10 +29,12 @@ pub struct NixLambda(pub Rc<Scope>, pub NixLambdaParam, pub ast::Expr);
 #[derive(Clone, PartialEq, Eq)]
 pub struct NixList(pub Rc<Vec<NixVar>>);
 
+pub type NixAttrSet = HashMap<String, NixVar>;
+
 /// https://nix.dev/manual/nix/2.24/language/types
 #[derive(Default, PartialEq, Eq)]
 pub enum NixValue {
-    AttrSet(HashMap<String, NixVar>),
+    AttrSet(NixAttrSet),
     Bool(bool),
     /// https://nix.dev/manual/nix/2.24/language/builtins
     Builtin(Rc<Box<dyn NixBuiltin>>),
@@ -264,7 +266,6 @@ impl NixValue {
 }
 
 impl NixLambda {
-
     pub fn call(&self, backtrace: Rc<NixBacktrace>, value: NixVar) -> NixResult {
         let NixLambda(scope, param, expr) = self;
         let span = Rc::new(NixSpan::from_ast_node(&scope.file, expr));

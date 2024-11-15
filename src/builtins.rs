@@ -8,7 +8,9 @@ use rnix::ast;
 
 use crate::result::NixSpan;
 use crate::value::{NixLambda, NixList};
-use crate::{AsString, NixBacktrace, NixError, NixResult, NixValue, NixValueWrapped, Scope};
+use crate::{
+    AsAttrSet, AsString, NixBacktrace, NixError, NixResult, NixValue, NixValueWrapped, Scope,
+};
 
 pub use r#impl::{get_builtins, Abort, Import, ToString};
 
@@ -144,6 +146,20 @@ impl FromNixExpr for String {
         Ok(value)
     }
 }
+
+// TODO:
+// impl FromNixExpr for NixAttrSet {
+//     fn from_nix_expr(
+//             backtrace: Rc<NixBacktrace>,
+//             scope: Rc<Scope>,
+//             expr: ast::Expr,
+//         ) -> NixResult<Self> {
+//         let value = scope.visit_expr(backtrace, expr.clone())?;
+//         let Some(value) = value.borrow().as_attr_set() else {
+//             todo!("Error handling");
+//         };
+//     }
+// }
 
 pub trait NixBuiltinInfo {
     const NAME: &str;

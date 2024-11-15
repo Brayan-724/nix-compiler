@@ -17,6 +17,23 @@ pub fn abort(message: String) {
 }
 
 #[builtin]
+pub fn attr_names(set: NixValueWrapped) {
+    let set = set.borrow();
+    let Some(set) = set.as_attr_set() else {
+        todo!("Error handling");
+    };
+
+    let names = set
+        .keys()
+        .cloned()
+        .map(NixValue::String)
+        .map(NixValue::wrap_var)
+        .collect::<Vec<NixVar>>();
+
+    Ok(NixValue::List(NixList(Rc::new(names))).wrap())
+}
+
+#[builtin]
 pub fn compare_versions(first_arg: String, second_arg: String) {
     let first_arg = first_arg.split(".");
     let second_arg = second_arg.split(".");
@@ -45,7 +62,7 @@ pub fn concat_map(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixLis
         let Some(item) = item.borrow().as_list() else {
             todo!("Error handling");
         };
-        
+
         out.extend_from_slice(&item.0)
     }
 
