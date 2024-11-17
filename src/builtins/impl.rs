@@ -220,6 +220,19 @@ pub fn list_to_attrs(backtrace: Rc<NixBacktrace>, list: NixList) {
 }
 
 #[builtin]
+pub fn map(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
+    let mut out = Vec::with_capacity(list.0.len());
+
+    for value in list.0.iter() {
+        let value = callback.call(backtrace.clone(), value.clone())?;
+
+        out.push(LazyNixValue::Concrete(value).wrap_var());
+    }
+
+    Ok(NixValue::List(NixList(Rc::new(out))).wrap())
+}
+
+#[builtin]
 pub fn map_attrs(backtrace: Rc<NixBacktrace>, callback: NixLambda, set: NixValueWrapped) {
     let set = set.borrow();
     let Some(set) = set.as_attr_set() else {
