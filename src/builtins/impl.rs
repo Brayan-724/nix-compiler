@@ -71,6 +71,25 @@ pub fn concat_map(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixLis
 }
 
 #[builtin]
+pub fn filter(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
+    let mut out = Vec::with_capacity(list.0.len());
+
+    for value in list.0.iter() {
+        let item = callback.call(backtrace.clone(), value.clone())?;
+
+        let Some(item) = item.borrow().as_bool() else {
+            todo!("Error handling");
+        };
+
+        if item {
+            out.push(value.clone());
+        }
+    }
+
+    Ok(NixValue::List(NixList(Rc::new(out))).wrap())
+}
+
+#[builtin]
 pub fn gen_list(backtrace: Rc<NixBacktrace>, callback: NixLambda, size: i64) {
     let out = (0..size)
         .map(|i| {
