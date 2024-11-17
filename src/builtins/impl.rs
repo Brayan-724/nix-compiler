@@ -130,13 +130,48 @@ pub fn import(backtrace: Rc<NixBacktrace>, argument: NixValueWrapped) {
 }
 
 #[builtin]
+pub fn is_attrs(argument: NixValueWrapped) {
+    Ok(NixValue::Bool(argument.borrow().is_attr_set()).wrap())
+}
+
+#[builtin]
 pub fn is_bool(argument: NixValueWrapped) {
     Ok(NixValue::Bool(argument.borrow().as_bool().is_some()).wrap())
 }
 
+#[builtin]
+pub fn is_function(argument: NixValueWrapped) {
+    Ok(NixValue::Bool(argument.borrow().is_function()).wrap())
+}
+
+#[builtin]
+pub fn is_float(argument: NixValueWrapped) {
+    Ok(NixValue::Bool(argument.borrow().is_float()).wrap())
+}
+
+#[builtin]
+pub fn is_int(argument: NixValueWrapped) {
+    Ok(NixValue::Bool(argument.borrow().is_int()).wrap())
+}
+
 #[builtin()]
 pub fn is_list(argument: NixValueWrapped) {
-    Ok(NixValue::Bool(argument.borrow().as_list().is_some()).wrap())
+    Ok(NixValue::Bool(argument.borrow().is_list()).wrap())
+}
+
+#[builtin()]
+pub fn is_null(argument: NixValueWrapped) {
+    Ok(NixValue::Bool(argument.borrow().is_null()).wrap())
+}
+
+#[builtin()]
+pub fn is_path(argument: NixValueWrapped) {
+    Ok(NixValue::Bool(argument.borrow().is_path()).wrap())
+}
+
+#[builtin]
+pub fn is_string(argument: NixValueWrapped) {
+    Ok(NixValue::Bool(argument.borrow().is_string()).wrap())
 }
 
 #[builtin()]

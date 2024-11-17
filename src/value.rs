@@ -32,12 +32,13 @@ pub struct NixList(pub Rc<Vec<NixVar>>);
 pub type NixAttrSet = HashMap<String, NixVar>;
 
 /// https://nix.dev/manual/nix/2.24/language/types
-#[derive(Default, PartialEq, Eq)]
+#[derive(Default, PartialEq)]
 pub enum NixValue {
     AttrSet(NixAttrSet),
     Bool(bool),
     /// https://nix.dev/manual/nix/2.24/language/builtins
     Builtin(Rc<Box<dyn NixBuiltin>>),
+    Float(f64),
     Int(i64),
     Lambda(NixLambda),
     List(NixList),
@@ -64,6 +65,7 @@ impl fmt::Debug for NixValue {
             NixValue::Bool(true) => f.write_str("true"),
             NixValue::Bool(false) => f.write_str("false"),
             NixValue::Builtin(builtin) => fmt::Debug::fmt(builtin, f),
+            NixValue::Float(val) => f.write_str(&val.to_string()),
             NixValue::Int(val) => f.write_str(&val.to_string()),
             NixValue::Lambda(..) => f.write_str("<lamda>"),
             NixValue::List(list) => {
@@ -144,6 +146,7 @@ impl fmt::Display for NixValue {
             NixValue::Bool(true) => f.write_str("true"),
             NixValue::Bool(false) => f.write_str("false"),
             NixValue::Builtin(builtin) => fmt::Display::fmt(&builtin, f),
+            NixValue::Float(val) => f.write_str(&val.to_string()),
             NixValue::Int(val) => f.write_str(&val.to_string()),
             NixValue::Lambda(..) => f.write_str("<lamda>"),
             NixValue::List(list) => {
@@ -263,6 +266,38 @@ impl NixValue {
             _ => None,
         }
     }
+
+    pub fn is_attr_set(&self) -> bool {
+        matches!(self, NixValue::AttrSet(_))
+    }
+
+    pub fn is_function(&self) -> bool {
+        matches!(self, NixValue::Lambda(_))
+    }
+
+    pub fn is_float(&self) -> bool {
+        matches!(self, NixValue::Float(_))
+    }
+
+    pub fn is_int(&self) -> bool {
+        matches!(self, NixValue::Int(_))
+    }
+
+    pub fn is_list(&self) -> bool {
+        matches!(self, NixValue::List(_))
+    }
+
+    pub fn is_null(&self) -> bool {
+        matches!(self, NixValue::Null)
+    }
+
+    pub fn is_path(&self) -> bool {
+        matches!(self, NixValue::Path(_))
+    }
+
+    pub fn is_string(&self) -> bool {
+        matches!(self, NixValue::String(_))
+    }
 }
 
 impl NixLambda {
@@ -315,10 +350,6 @@ impl AsString for NixValue {
 pub trait AsAttrSet {
     fn as_attr_set(&self) -> Option<&HashMap<String, NixVar>>;
     fn as_attr_set_mut(&mut self) -> Option<&mut HashMap<String, NixVar>>;
-
-    fn is_attr_set(&self) -> bool {
-        self.as_attr_set().is_some()
-    }
 }
 
 impl AsAttrSet for NixValue {

@@ -624,11 +624,7 @@ impl Scope {
         node: ast::Literal,
     ) -> NixResult {
         match node.kind() {
-            ast::LiteralKind::Float(_) => Err(NixError::todo(
-                NixSpan::from_ast_node(&self.file, &node).into(),
-                "Float literal",
-                None,
-            )),
+            ast::LiteralKind::Float(value) => Ok(NixValue::Float(value.value().unwrap()).wrap()),
             ast::LiteralKind::Integer(value) => Ok(NixValue::Int(value.value().unwrap()).wrap()),
             ast::LiteralKind::Uri(_) => Err(NixError::todo(
                 NixSpan::from_ast_node(&self.file, &node).into(),
