@@ -45,6 +45,7 @@ impl Scope {
         insert!(globals; abort = builtins::Abort::generate());
         insert!(globals; false = NixValue::Bool(false));
         insert!(globals; import = builtins::Import::generate());
+        insert!(globals; map = builtins::Map::generate());
         insert!(globals; null = NixValue::Null);
         insert!(globals; toString = builtins::ToString::generate());
         insert!(globals; true = NixValue::Bool(true));
