@@ -372,11 +372,24 @@ impl Scope {
         let lhs = self.visit_expr(backtrace.clone(), node.lhs().unwrap())?;
 
         match node.operator().unwrap() {
-            ast::BinOpKind::Concat => Err(NixError::todo(
-                NixSpan::from_ast_node(&self.file, &node).into(),
-                "Concat op",
-                None,
-            )),
+            ast::BinOpKind::Concat => lhs
+                .borrow()
+                .as_list()
+                .ok_or_else(|| todo!("Error handling"))
+                .and_then(|ref lhs| {
+                    let rhs = self
+                        .visit_expr(backtrace, node.rhs().unwrap())
+                        .and_then(|a| {
+                            a.borrow().as_list().ok_or_else(|| todo!("Error handling"))
+                        })?;
+
+                    let mut out = Vec::with_capacity(lhs.0.len() + rhs.0.len());
+
+                    out.extend(lhs.0.iter().cloned());
+                    out.extend(rhs.0.iter().cloned());
+
+                    Ok(NixValue::List(NixList(Rc::new(out))).wrap())
+                }),
             ast::BinOpKind::Update => lhs
                 .borrow()
                 .as_attr_set()
