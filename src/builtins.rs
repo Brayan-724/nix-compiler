@@ -8,9 +8,7 @@ use rnix::ast;
 
 use crate::result::NixSpan;
 use crate::value::{NixLambda, NixList};
-use crate::{
-    AsAttrSet, AsString, NixBacktrace, NixError, NixResult, NixValue, NixValueWrapped, Scope,
-};
+use crate::{AsString, NixBacktrace, NixError, NixResult, NixValue, NixValueWrapped, Scope};
 
 pub use r#impl::{get_builtins, Abort, Import, ToString};
 

@@ -229,7 +229,8 @@ pub fn map_attrs(backtrace: Rc<NixBacktrace>, callback: NixLambda, set: NixValue
     let mut out = HashMap::new();
 
     for (key, value) in set {
-        let callback = callback.call(backtrace.clone(), NixValue::String(key.clone()).wrap_var())?;
+        let callback =
+            callback.call(backtrace.clone(), NixValue::String(key.clone()).wrap_var())?;
         let callback = callback.borrow();
         let Some(callback) = callback.as_lambda() else {
             todo!("Error handling")
