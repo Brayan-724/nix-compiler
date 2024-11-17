@@ -30,6 +30,7 @@ pub fn attr_names(set: NixValueWrapped) {
         .map(NixValue::wrap_var)
         .collect::<Vec<NixVar>>();
 
+    // TODO: needs to be sorted
     Ok(NixValue::List(NixList(Rc::new(names))).wrap())
 }
 
@@ -214,6 +215,30 @@ pub fn list_to_attrs(backtrace: Rc<NixBacktrace>, list: NixList) {
             Ok((name, value))
         })
         .collect::<NixResult<HashMap<String, NixVar>>>()?;
+
+    Ok(NixValue::AttrSet(out).wrap())
+}
+
+#[builtin]
+pub fn map_attrs(backtrace: Rc<NixBacktrace>, callback: NixLambda, set: NixValueWrapped) {
+    let set = set.borrow();
+    let Some(set) = set.as_attr_set() else {
+        todo!("Error handling");
+    };
+
+    let mut out = HashMap::new();
+
+    for (key, value) in set {
+        let callback = callback.call(backtrace.clone(), NixValue::String(key.clone()).wrap_var())?;
+        let callback = callback.borrow();
+        let Some(callback) = callback.as_lambda() else {
+            todo!("Error handling")
+        };
+
+        let value = callback.call(backtrace.clone(), value.clone())?;
+
+        out.insert(key.clone(), LazyNixValue::Concrete(value).wrap_var());
+    }
 
     Ok(NixValue::AttrSet(out).wrap())
 }
