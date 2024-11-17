@@ -121,17 +121,20 @@ fn parse_param(
         let prev_params = (0..idx)
             .map(|i| format_ident!("__param_{i}", span = param.span()))
             .collect::<Vec<_>>();
+        let next_params = ((idx + 1)..(total_params - 1))
+            .map(|_| format_ident!("None", span = param.span()))
+            .collect::<Vec<_>>();
         let new_param =
             quote_spanned! {ty.span() => Some(::std::rc::Rc::new((backtrace, scope, argument)))};
 
         let def = quote_spanned! {param.span() =>
-            <#ty as crate::builtins::FromNixExpr>::from_nix_expr(#param.0.clone(), #param.1.clone(), #param.2.clone())?
+            <#ty as crate::builtins::FromNixExpr>::from_nix_expr(#param_ident.0.clone(), #param_ident.1.clone(), #param_ident.2.clone())?
         };
 
         let decl = quote_spanned! {ty.span() =>
-            let Some(#param) = #param_ident else {
+            let Some(#param_ident) = #param_ident else {
                 return Ok(
-                    NixValue::Builtin(::std::rc::Rc::new(Box::new(#struct_name(#(#prev_params,)* #new_param))))
+                    NixValue::Builtin(::std::rc::Rc::new(Box::new(#struct_name(#(Some(#prev_params.clone()),)* #new_param #(, #next_params)*))))
                         .wrap()
                 )
             };
