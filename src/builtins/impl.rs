@@ -284,17 +284,12 @@ pub fn path_exists(path: PathBuf) {
 }
 
 #[builtin()]
-pub fn remove_attrs(backtrace: Rc<NixBacktrace>, attrset: NixValueWrapped, attrs: NixValueWrapped) {
+pub fn remove_attrs(backtrace: Rc<NixBacktrace>, attrset: NixValueWrapped, attrs: NixList) {
     if !attrset.borrow().is_attr_set() {
         todo!("Error handling")
     }
 
     let mut attrset = attrset.borrow().as_attr_set().unwrap().clone();
-
-    let attrs = attrs.borrow();
-    let Some(attrs) = attrs.as_list() else {
-        todo!("Error handling")
-    };
 
     let attrs = attrs
         .0
