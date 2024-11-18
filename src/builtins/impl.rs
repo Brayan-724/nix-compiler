@@ -35,6 +35,22 @@ pub fn attr_names(set: NixValueWrapped) {
 }
 
 #[builtin]
+pub fn base_name_of(s: NixValueWrapped) {
+    let s = s.borrow();
+    let Some(s) = s.as_path() else {
+        todo!("Error Handling: baseNameOf cannot convert into path");
+    };
+    let Some(s) = s.file_name() else {
+        todo!("Error Handling: baseNameOf get file_name/baseNameOf");
+    };
+    let Some(s) = s.to_str() else {
+        todo!("Error Handling: baseNameOf cannot get str from path");
+    };
+
+    Ok(NixValue::String(s.to_owned()).wrap())
+}
+
+#[builtin]
 pub fn compare_versions(first_arg: String, second_arg: String) {
     let first_arg = first_arg.split(".");
     let second_arg = second_arg.split(".");
