@@ -104,6 +104,22 @@ pub fn concat_string_sep(backtrace: Rc<NixBacktrace>, sep: String, list: NixList
 }
 
 #[builtin]
+pub fn dir_of(s: NixValueWrapped) {
+    let s = s.borrow();
+    let Some(s) = s.as_path() else {
+        todo!("Error Handling: dirOf cannot convert into path");
+    };
+    let Some(s) = s.parent() else {
+        todo!("Error Handling: dirOf get parent/dirname");
+    };
+    let Some(s) = s.to_str() else {
+        todo!("Error Handling: dirOf cannot get str from path");
+    };
+
+    Ok(NixValue::String(s.to_owned()).wrap())
+}
+
+#[builtin]
 pub fn filter(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
     let mut out = Vec::with_capacity(list.0.len());
 
