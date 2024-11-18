@@ -7,8 +7,8 @@ use rnix::ast;
 
 use crate::value::{NixLambda, NixList};
 use crate::{
-    AsAttrSet, AsString, LazyNixValue, NixBacktrace, NixResult, NixValue, NixValueWrapped, NixVar,
-    Scope,
+    AsAttrSet, AsString, LazyNixValue, NixBacktrace, NixError, NixLabel, NixResult, NixValue,
+    NixValueWrapped, NixVar, Scope,
 };
 
 #[builtin]
@@ -298,6 +298,75 @@ pub fn path_exists(path: PathBuf) {
     let exists = path.try_exists().is_ok_and(|x| x);
 
     Ok(NixValue::Bool(exists).wrap())
+}
+
+#[builtin]
+pub fn replace_strings(
+    backtrace: Rc<NixBacktrace>,
+    from: NixList,
+    to: NixList,
+    s: String,
+) -> Result<NixValueWrapped, NixError> {
+    if from.0.len() != to.0.len() {
+        todo!(
+            "`from` and `to` arguments have different lengths: {} vs {}",
+            from.0.len(),
+            to.0.len()
+        );
+    }
+
+    let mut from_vec = Vec::new();
+    let mut to_cache = HashMap::new();
+
+    for item in from.0.iter() {
+        let resolved = item.resolve(backtrace.clone())?;
+        let Some(search) = resolved.borrow().as_string() else {
+            todo!("Expected string in `from`");
+        };
+        from_vec.push(search.clone());
+    }
+
+    let mut res = String::new();
+    let s_chars: Vec<_> = s.chars().collect();
+    let mut p = 0;
+
+    while p <= s_chars.len() {
+        let mut found = false;
+
+        for (i, search) in from_vec.iter().enumerate() {
+            if s_chars[p..].iter().collect::<String>().starts_with(search) {
+                let replace = to.0.get(i).unwrap();
+                let resolved_replace = replace.resolve(backtrace.clone())?;
+                let Some(replace_str) = resolved_replace.borrow().as_string() else {
+                    todo!("Expected string in `to`");
+                };
+
+                let cached_replace = to_cache.entry(i).or_insert_with(|| replace_str.clone());
+
+                res.push_str(cached_replace);
+
+                if search.is_empty() {
+                    if p < s_chars.len() {
+                        res.push(s_chars[p]);
+                    }
+                    p += 1;
+                } else {
+                    p += search.len();
+                }
+                found = true;
+                break;
+            }
+        }
+
+        if !found {
+            if p < s_chars.len() {
+                res.push(s_chars[p]);
+            }
+            p += 1;
+        }
+    }
+
+    Ok(NixValue::String(res).wrap())
 }
 
 #[builtin()]
