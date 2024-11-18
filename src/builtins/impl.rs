@@ -312,6 +312,11 @@ pub fn remove_attrs(backtrace: Rc<NixBacktrace>, attrset: NixValueWrapped, attrs
     Ok(NixValue::AttrSet(attrset).wrap())
 }
 
+#[builtin]
+pub fn string_length(argument: NixValueWrapped) {
+    Ok(NixValue::Int(argument.borrow().as_string().unwrap().len() as i64).wrap())
+}
+
 #[builtin()]
 pub fn to_string(argument: String) {
     Ok(NixValue::String(argument).wrap())
