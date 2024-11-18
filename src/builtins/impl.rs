@@ -314,6 +314,27 @@ pub fn read_file(path: NixValueWrapped) {
 }
 
 #[builtin]
+pub fn read_file_type(path: NixValueWrapped) {
+    let path = path.borrow();
+    let Some(path) = path.as_path() else {
+        todo!("Error Handling");
+    };
+    let Ok(metadata) = std::fs::metadata(path) else {
+        todo!("Error Handling");
+    };
+    let res = if metadata.is_dir() {
+        "directory"
+    } else if metadata.is_symlink() {
+        "symlink"
+    } else if metadata.is_file() {
+        "regular"
+    } else {
+        "unknown"
+    };
+    Ok(NixValue::String(res.to_owned()).wrap())
+}
+
+#[builtin]
 pub fn replace_strings(
     backtrace: Rc<NixBacktrace>,
     from: NixList,
