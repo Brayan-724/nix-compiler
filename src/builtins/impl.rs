@@ -433,6 +433,17 @@ pub fn remove_attrs(backtrace: Rc<NixBacktrace>, attrset: NixValueWrapped, attrs
 }
 
 #[builtin]
+pub fn substring(start: usize, len: usize, s: String) {
+    if len > s.len() {
+        todo!("Error Handling: len > s.len()");
+    }
+    if start >= len {
+        todo!("Error Handling: start > len");
+    }
+    Ok(NixValue::String(s[start..len].to_owned()).wrap())
+}
+
+#[builtin]
 pub fn string_length(argument: NixValueWrapped) {
     Ok(NixValue::Int(argument.borrow().as_string().unwrap().len() as i64).wrap())
 }
