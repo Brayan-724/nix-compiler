@@ -35,6 +35,22 @@ pub fn attr_names(set: NixValueWrapped) {
 }
 
 #[builtin]
+pub fn attr_values(set: NixValueWrapped) {
+    let set = set.borrow();
+    let Some(set) = set.as_attr_set() else {
+        todo!("Error handling");
+    };
+
+    let names = set
+        .values()
+        .cloned()
+        .collect::<Vec<NixVar>>();
+
+    // TODO: needs to be sorted
+    Ok(NixValue::List(NixList(Rc::new(names))).wrap())
+}
+
+#[builtin]
 pub fn compare_versions(first_arg: String, second_arg: String) {
     let first_arg = first_arg.split(".");
     let second_arg = second_arg.split(".");
