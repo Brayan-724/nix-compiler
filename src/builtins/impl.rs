@@ -301,6 +301,19 @@ pub fn path_exists(path: PathBuf) {
 }
 
 #[builtin]
+pub fn read_file(path: NixValueWrapped) {
+    let path = path.borrow();
+    let Some(path) = path.as_path() else {
+        todo!("Error Handling");
+    };
+    let Ok(content) = std::fs::read_to_string(path) else {
+        todo!("Error Handling");
+    };
+
+    Ok(NixValue::String(content).wrap())
+}
+
+#[builtin]
 pub fn replace_strings(
     backtrace: Rc<NixBacktrace>,
     from: NixList,
