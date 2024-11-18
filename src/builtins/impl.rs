@@ -71,6 +71,23 @@ pub fn concat_map(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixLis
 }
 
 #[builtin]
+pub fn concat_string_sep(backtrace: Rc<NixBacktrace>, sep: String, list: NixList) {
+    let list = list
+        .0
+        .iter()
+        .map(|i| i.resolve(backtrace.clone()))
+        .collect::<NixResult<Vec<_>>>()?
+        .iter()
+        .map(|i| {
+            i.borrow()
+                .as_string()
+                .ok_or_else(|| todo!("Error Handling"))
+        })
+        .collect::<NixResult<Vec<_>>>()?;
+    Ok(NixValue::String(list.join(&sep)).wrap())
+}
+
+#[builtin]
 pub fn filter(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
     let mut out = Vec::with_capacity(list.0.len());
 
