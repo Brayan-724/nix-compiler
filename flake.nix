@@ -26,6 +26,8 @@
       devShells.${system}.default = pkgs.mkShell {
         buildInputs = with pkgs; [
           nushell
+          pkg-config
+          openssl
           rust-toolchain
         ];
       };
