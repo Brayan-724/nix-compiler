@@ -41,10 +41,7 @@ pub fn attr_values(set: NixValueWrapped) {
         todo!("Error handling");
     };
 
-    let names = set
-        .values()
-        .cloned()
-        .collect::<Vec<NixVar>>();
+    let names = set.values().cloned().collect::<Vec<NixVar>>();
 
     // TODO: needs to be sorted
     Ok(NixValue::List(NixList(Rc::new(names))).wrap())
@@ -88,12 +85,11 @@ pub fn concat_map(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixLis
 
 #[builtin]
 pub fn elem(backtrace: Rc<NixBacktrace>, x: NixValueWrapped, xs: NixList) {
-
     for item in xs.0.iter() {
         let item = item.resolve(backtrace.clone())?;
 
         if x.borrow().eq(&*item.borrow()) {
-            return Ok(NixValue::Bool(true).wrap())
+            return Ok(NixValue::Bool(true).wrap());
         }
     }
 
