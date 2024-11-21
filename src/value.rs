@@ -242,6 +242,14 @@ impl NixValue {
             None
         }
     }
+    
+    pub fn as_int(&self) -> Option<i64> {
+        if let NixValue::Int(value) = self {
+            Some(*value)
+        } else {
+            None
+        }
+    }
 
     pub fn as_lambda(&self) -> Option<&NixLambda> {
         if let NixValue::Lambda(lambda) = self {

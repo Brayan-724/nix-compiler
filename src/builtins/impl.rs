@@ -51,6 +51,19 @@ pub fn base_name_of(s: NixValueWrapped) {
 }
 
 #[builtin]
+pub fn attr_values(set: NixValueWrapped) {
+    let set = set.borrow();
+    let Some(set) = set.as_attr_set() else {
+        todo!("Error handling");
+    };
+
+    let names = set.values().cloned().collect::<Vec<NixVar>>();
+
+    // TODO: needs to be sorted
+    Ok(NixValue::List(NixList(Rc::new(names))).wrap())
+}
+
+#[builtin]
 pub fn compare_versions(first_arg: String, second_arg: String) {
     let first_arg = first_arg.split(".");
     let second_arg = second_arg.split(".");
@@ -117,6 +130,19 @@ pub fn dir_of(s: NixValueWrapped) {
     };
 
     Ok(NixValue::String(s.to_owned()).wrap())
+}
+
+#[builtin]
+pub fn elem(backtrace: Rc<NixBacktrace>, x: NixValueWrapped, xs: NixList) {
+    for item in xs.0.iter() {
+        let item = item.resolve(backtrace.clone())?;
+
+        if x.borrow().eq(&*item.borrow()) {
+            return Ok(NixValue::Bool(true).wrap());
+        }
+    }
+
+    Ok(NixValue::Bool(false).wrap())
 }
 
 #[builtin]
@@ -436,17 +462,12 @@ pub fn replace_strings(
 }
 
 #[builtin()]
-pub fn remove_attrs(backtrace: Rc<NixBacktrace>, attrset: NixValueWrapped, attrs: NixValueWrapped) {
+pub fn remove_attrs(backtrace: Rc<NixBacktrace>, attrset: NixValueWrapped, attrs: NixList) {
     if !attrset.borrow().is_attr_set() {
         todo!("Error handling")
     }
 
     let mut attrset = attrset.borrow().as_attr_set().unwrap().clone();
-
-    let attrs = attrs.borrow();
-    let Some(attrs) = attrs.as_list() else {
-        todo!("Error handling")
-    };
 
     let attrs = attrs
         .0
