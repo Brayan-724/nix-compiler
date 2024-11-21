@@ -7,8 +7,8 @@ use rnix::ast;
 
 use crate::value::{NixLambda, NixList};
 use crate::{
-    AsAttrSet, AsString, LazyNixValue, NixBacktrace, NixResult, NixValue, NixValueWrapped, NixVar,
-    Scope,
+    AsAttrSet, AsString, LazyNixValue, NixBacktrace, NixError, NixLabel, NixResult, NixValue,
+    NixValueWrapped, NixVar, Scope,
 };
 
 #[builtin]
@@ -32,6 +32,22 @@ pub fn attr_names(set: NixValueWrapped) {
 
     // TODO: needs to be sorted
     Ok(NixValue::List(NixList(Rc::new(names))).wrap())
+}
+
+#[builtin]
+pub fn base_name_of(s: NixValueWrapped) {
+    let s = s.borrow();
+    let Some(s) = s.as_path() else {
+        todo!("Error Handling: baseNameOf cannot convert into path");
+    };
+    let Some(s) = s.file_name() else {
+        todo!("Error Handling: baseNameOf get file_name/baseNameOf");
+    };
+    let Some(s) = s.to_str() else {
+        todo!("Error Handling: baseNameOf cannot get str from path");
+    };
+
+    Ok(NixValue::String(s.to_owned()).wrap())
 }
 
 #[builtin]
@@ -81,6 +97,39 @@ pub fn concat_map(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixLis
     }
 
     Ok(NixValue::List(NixList(Rc::new(out))).wrap())
+}
+
+#[builtin]
+pub fn concat_string_sep(backtrace: Rc<NixBacktrace>, sep: String, list: NixList) {
+    let list = list
+        .0
+        .iter()
+        .map(|i| i.resolve(backtrace.clone()))
+        .collect::<NixResult<Vec<_>>>()?
+        .iter()
+        .map(|i| {
+            i.borrow()
+                .as_string()
+                .ok_or_else(|| todo!("Error Handling"))
+        })
+        .collect::<NixResult<Vec<_>>>()?;
+    Ok(NixValue::String(list.join(&sep)).wrap())
+}
+
+#[builtin]
+pub fn dir_of(s: NixValueWrapped) {
+    let s = s.borrow();
+    let Some(s) = s.as_path() else {
+        todo!("Error Handling: dirOf cannot convert into path");
+    };
+    let Some(s) = s.parent() else {
+        todo!("Error Handling: dirOf get parent/dirname");
+    };
+    let Some(s) = s.to_str() else {
+        todo!("Error Handling: dirOf cannot get str from path");
+    };
+
+    Ok(NixValue::String(s.to_owned()).wrap())
 }
 
 #[builtin]
@@ -309,6 +358,109 @@ pub fn path_exists(path: PathBuf) {
     Ok(NixValue::Bool(exists).wrap())
 }
 
+#[builtin]
+pub fn read_file(path: NixValueWrapped) {
+    let path = path.borrow();
+    let Some(path) = path.as_path() else {
+        todo!("Error Handling");
+    };
+    let Ok(content) = std::fs::read_to_string(path) else {
+        todo!("Error Handling");
+    };
+
+    Ok(NixValue::String(content).wrap())
+}
+
+#[builtin]
+pub fn read_file_type(path: NixValueWrapped) {
+    let path = path.borrow();
+    let Some(path) = path.as_path() else {
+        todo!("Error Handling");
+    };
+    let Ok(metadata) = std::fs::metadata(path) else {
+        todo!("Error Handling");
+    };
+    let res = if metadata.is_dir() {
+        "directory"
+    } else if metadata.is_symlink() {
+        "symlink"
+    } else if metadata.is_file() {
+        "regular"
+    } else {
+        "unknown"
+    };
+    Ok(NixValue::String(res.to_owned()).wrap())
+}
+
+#[builtin]
+pub fn replace_strings(
+    backtrace: Rc<NixBacktrace>,
+    from: NixList,
+    to: NixList,
+    s: String,
+) -> Result<NixValueWrapped, NixError> {
+    if from.0.len() != to.0.len() {
+        todo!(
+            "`from` and `to` arguments have different lengths: {} vs {}",
+            from.0.len(),
+            to.0.len()
+        );
+    }
+
+    let mut from_vec = Vec::new();
+    let mut to_cache = HashMap::new();
+
+    for item in from.0.iter() {
+        let resolved = item.resolve(backtrace.clone())?;
+        let Some(search) = resolved.borrow().as_string() else {
+            todo!("Expected string in `from`");
+        };
+        from_vec.push(search.clone());
+    }
+
+    let mut res = String::new();
+    let s_chars: Vec<_> = s.chars().collect();
+    let mut p = 0;
+
+    while p <= s_chars.len() {
+        let mut found = false;
+
+        for (i, search) in from_vec.iter().enumerate() {
+            if s_chars[p..].iter().collect::<String>().starts_with(search) {
+                let replace = to.0.get(i).unwrap();
+                let resolved_replace = replace.resolve(backtrace.clone())?;
+                let Some(replace_str) = resolved_replace.borrow().as_string() else {
+                    todo!("Expected string in `to`");
+                };
+
+                let cached_replace = to_cache.entry(i).or_insert_with(|| replace_str.clone());
+
+                res.push_str(cached_replace);
+
+                if search.is_empty() {
+                    if p < s_chars.len() {
+                        res.push(s_chars[p]);
+                    }
+                    p += 1;
+                } else {
+                    p += search.len();
+                }
+                found = true;
+                break;
+            }
+        }
+
+        if !found {
+            if p < s_chars.len() {
+                res.push(s_chars[p]);
+            }
+            p += 1;
+        }
+    }
+
+    Ok(NixValue::String(res).wrap())
+}
+
 #[builtin()]
 pub fn remove_attrs(backtrace: Rc<NixBacktrace>, attrset: NixValueWrapped, attrs: NixList) {
     if !attrset.borrow().is_attr_set() {
@@ -331,6 +483,22 @@ pub fn remove_attrs(backtrace: Rc<NixBacktrace>, attrset: NixValueWrapped, attrs
     }
 
     Ok(NixValue::AttrSet(attrset).wrap())
+}
+
+#[builtin]
+pub fn substring(start: usize, len: usize, s: String) {
+    if len > s.len() {
+        todo!("Error Handling: len > s.len()");
+    }
+    if start >= len {
+        todo!("Error Handling: start > len");
+    }
+    Ok(NixValue::String(s[start..len].to_owned()).wrap())
+}
+
+#[builtin]
+pub fn string_length(argument: NixValueWrapped) {
+    Ok(NixValue::Int(argument.borrow().as_string().unwrap().len() as i64).wrap())
 }
 
 #[builtin()]
@@ -356,6 +524,11 @@ pub fn try_eval(backtrace: Rc<NixBacktrace>, argument: (Rc<Scope>, ast::Expr)) {
     );
 
     return Ok(NixValue::AttrSet(result).wrap());
+}
+
+#[builtin]
+pub fn type_of(argument: NixValueWrapped) {
+    Ok(NixValue::String(argument.borrow().as_type().to_owned()).wrap())
 }
 
 gen_builtins! {

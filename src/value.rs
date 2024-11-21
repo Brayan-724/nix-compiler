@@ -275,6 +275,21 @@ impl NixValue {
         }
     }
 
+    pub fn as_type(&self) -> &'static str {
+        match self {
+            NixValue::AttrSet(_) => "set",
+            NixValue::Bool(_) => "bool",
+            NixValue::Float(_) => "float",
+            NixValue::Int(_) => "int",
+            NixValue::Lambda(_) => "lambda",
+            NixValue::List(_) => "list",
+            NixValue::Null => "null",
+            NixValue::Path(_) => "path",
+            NixValue::String(_) => "string",
+            NixValue::Builtin(_) => "lambda",
+        }
+    }
+
     pub fn is_attr_set(&self) -> bool {
         matches!(self, NixValue::AttrSet(_))
     }
