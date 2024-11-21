@@ -15,7 +15,7 @@ use rnix::ast;
 
 use crate::builtins::NixBuiltin;
 use crate::scope::Scope;
-use crate::{NixBacktrace, NixResult, NixSpan};
+use crate::{NixBacktrace, NixResult};
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum NixLambdaParam {
@@ -326,18 +326,67 @@ impl NixValue {
 impl NixLambda {
     pub fn call(&self, backtrace: Rc<NixBacktrace>, value: NixVar) -> NixResult {
         let NixLambda(scope, param, expr) = self;
-        let span = Rc::new(NixSpan::from_ast_node(&scope.file, expr));
 
         match param {
             crate::NixLambdaParam::Ident(ident) => {
                 scope.set_variable(ident.clone(), value);
             }
-            crate::NixLambdaParam::Pattern(_) => {
-                return Err(crate::NixError::todo(
-                    span,
-                    "Pattern lambda param",
-                    Some(backtrace.clone()),
-                ))
+            crate::NixLambdaParam::Pattern(pattern) => {
+                let argument_var = value.resolve(backtrace.clone())?;
+                let argument = argument_var.borrow();
+                let Some(argument) = argument.as_attr_set() else {
+                    todo!("Error handling")
+                };
+
+                if let Some(pat_bind) = pattern.pat_bind() {
+                    let varname = pat_bind
+                        .ident()
+                        .unwrap()
+                        .ident_token()
+                        .unwrap()
+                        .text()
+                        .to_owned();
+
+                    // TODO: Should set only the unused keys instead of the argument
+                    scope.set_variable(
+                        varname,
+                        LazyNixValue::Concrete(argument_var.clone()).wrap_var(),
+                    );
+                }
+
+                let has_ellipsis = pattern.ellipsis_token().is_some();
+
+                let mut unused = (!has_ellipsis).then(|| argument.keys().collect::<Vec<_>>());
+
+                for entry in pattern.pat_entries() {
+                    let varname = entry.ident().unwrap().ident_token().unwrap();
+                    let varname = varname.text();
+
+                    if let Some(unused) = unused.as_mut() {
+                        if let Some(idx) = unused.iter().position(|&key| key == varname) {
+                            unused.swap_remove(idx);
+                        }
+                    }
+
+                    let var = if let Some(var) = argument.get(varname).cloned() {
+                        var
+                    } else {
+                        if let Some(expr) = entry.default() {
+                            LazyNixValue::Concrete(scope.visit_expr(backtrace.clone(), expr)?)
+                                .wrap_var()
+                        } else {
+                            todo!("Require {varname}");
+                        }
+                    };
+
+                    scope.set_variable(varname.to_owned(), var.clone());
+                }
+
+                if let Some(unused) = unused {
+                    if !unused.is_empty() {
+                        todo!("Handle error: Unused keys: {unused:?}")
+                    }
+                }
             }
         };
 

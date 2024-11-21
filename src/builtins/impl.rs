@@ -7,8 +7,8 @@ use rnix::ast;
 
 use crate::value::{NixLambda, NixList};
 use crate::{
-    AsAttrSet, AsString, LazyNixValue, NixBacktrace, NixError, NixLabel, NixResult, NixValue,
-    NixValueWrapped, NixVar, Scope,
+    AsAttrSet, AsString, LazyNixValue, NixBacktrace, NixResult, NixValue, NixValueWrapped, NixVar,
+    Scope,
 };
 
 #[builtin]
