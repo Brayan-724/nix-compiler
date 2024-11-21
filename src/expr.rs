@@ -458,11 +458,19 @@ impl Scope {
                     lhs.then(|| self.visit_expr(backtrace, node.rhs().unwrap()))
                         .unwrap_or_else(|| Ok(NixValue::Bool(true).wrap()))
                 }),
-            ast::BinOpKind::Less => Err(NixError::todo(
-                NixSpan::from_ast_node(&self.file, &node).into(),
-                "Less op",
-                None,
-            )),
+            ast::BinOpKind::Less => match lhs.borrow().deref() {
+                NixValue::Int(lhs) => self
+                    .visit_expr(backtrace, node.rhs().unwrap())?
+                    .borrow()
+                    .as_int()
+                    .ok_or_else(|| todo!("Error handling"))
+                    .map(|rhs| NixValue::Bool(*lhs < rhs).wrap()),
+                _ => Err(NixError::todo(
+                    NixSpan::from_ast_node(&self.file, &node).into(),
+                    "Cannot less",
+                    None,
+                )),
+            },
             ast::BinOpKind::LessOrEq => Err(NixError::todo(
                 NixSpan::from_ast_node(&self.file, &node).into(),
                 "LessOrEq op",
