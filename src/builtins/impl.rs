@@ -19,6 +19,20 @@ pub fn abort(message: String) {
 }
 
 #[builtin]
+pub fn all(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
+    for item in list.0.iter() {
+        let callback = callback.call(backtrace.clone(), item.clone())?;
+        let callback = callback.borrow().as_bool().ok_or_else(|| todo!("Error handling"))?;
+
+        if !callback {
+            return Ok(NixValue::Bool(false).wrap())
+        }
+    }
+
+    Ok(NixValue::Bool(true).wrap())
+}
+
+#[builtin]
 pub fn attr_names(set: NixValueWrapped) {
     let set = set.borrow();
     let Some(set) = set.as_attr_set() else {
