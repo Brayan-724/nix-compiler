@@ -730,8 +730,13 @@ impl Scope {
     ) -> NixResult {
         let var = self.visit_expr(backtrace.clone(), node.expr().unwrap())?;
 
-        self.resolve_attr_path(backtrace.clone(), var, node.attrpath().unwrap())?
-            .resolve(backtrace)
+        let var = self.resolve_attr_path(backtrace.clone(), var, node.attrpath().unwrap());
+
+        if var.is_err() && node.default_expr().is_some() {
+            self.visit_expr(backtrace, node.default_expr().unwrap())
+        } else {
+            var?.resolve(backtrace)
+        }
     }
 
     pub fn visit_str(self: &Rc<Self>, backtrace: Rc<NixBacktrace>, node: ast::Str) -> NixResult {
