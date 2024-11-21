@@ -486,14 +486,14 @@ pub fn remove_attrs(backtrace: Rc<NixBacktrace>, attrset: NixValueWrapped, attrs
 }
 
 #[builtin]
-pub fn substring(start: usize, len: usize, s: String) {
-    if len > s.len() {
-        todo!("Error Handling: len > s.len()");
+pub fn substring(start: usize, len: isize, s: String) {
+    if len < 0 || start + len as usize > s.len() {
+        Ok(NixValue::String(s[start..].to_owned()).wrap())
+    } else if len == 0 || start > s.len() {
+        Ok(NixValue::String(String::new()).wrap())
+    } else {
+        Ok(NixValue::String(s[start..start + len as usize].to_owned()).wrap())
     }
-    if start >= len {
-        todo!("Error Handling: start > len");
-    }
-    Ok(NixValue::String(s[start..len].to_owned()).wrap())
 }
 
 #[builtin]
