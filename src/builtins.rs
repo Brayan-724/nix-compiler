@@ -1,3 +1,4 @@
+mod hash;
 mod r#impl;
 
 use std::fmt::{self, Write};
