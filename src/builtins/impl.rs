@@ -7,9 +7,11 @@ use rnix::ast;
 
 use crate::value::{NixLambda, NixList};
 use crate::{
-    AsAttrSet, AsString, LazyNixValue, NixBacktrace, NixError, NixLabel, NixResult, NixValue,
-    NixValueWrapped, NixVar, Scope,
+    AsAttrSet, AsString, LazyNixValue, NixBacktrace, NixResult, NixValue, NixValueWrapped, NixVar,
+    Scope,
 };
+
+use super::hash;
 
 #[builtin]
 pub fn abort(message: String) {
@@ -185,6 +187,18 @@ pub fn get_env(env: String) {
     let value = std::env::var(env).unwrap_or_default();
 
     Ok(NixValue::String(value).wrap())
+}
+
+fn intern_hash(ty: &str, bytes: &[u8]) -> String {
+    let algorithm = match ty {
+        "md5" => hash::Algorithm::MD5,
+        "sha1" => hash::Algorithm::SHA1,
+        "sha256" => hash::Algorithm::SHA256,
+        "sha512" => hash::Algorithm::SHA512,
+        _ => todo!("Error Handling: hashFile incompatible hash type"),
+    };
+
+    hash::hex_digest(algorithm, bytes)
 }
 
 #[builtin]
