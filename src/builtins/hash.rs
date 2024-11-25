@@ -1,3 +1,5 @@
+//! Inspired by https://github.com/malept/crypto-hash/blob/master/src/imp/openssl.rs
+
 use std::io::{self, Write};
 
 use openssl::hash;
