@@ -201,6 +201,19 @@ fn intern_hash(ty: &str, bytes: &[u8]) -> String {
     hash::hex_digest(algorithm, bytes)
 }
 
+#[builtin()]
+pub fn hash_file(t: String, p: NixValueWrapped) {
+    let Some(path) = p.borrow().as_path() else {
+        todo!("Error Handling: hashFile cannot convert into path");
+    };
+    let Ok(content) = std::fs::read(path) else {
+        todo!("Error Handling: hashFile cannot read file");
+    };
+
+    let value = intern_hash(&t, &content);
+    Ok(NixValue::String(value).wrap())
+}
+
 #[builtin]
 pub fn import(backtrace: Rc<NixBacktrace>, argument: NixValueWrapped) {
     let argument = argument.borrow();
