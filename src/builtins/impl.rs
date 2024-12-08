@@ -611,6 +611,7 @@ pub fn type_of(argument: NixValueWrapped) {
 }
 
 gen_builtins! {
+    currentSystem = NixValue::String("x86_64-linux".to_owned());
     false = NixValue::Bool(false);
     nixVersion = NixValue::String("2.24.9".to_owned());
     null = NixValue::Null;
