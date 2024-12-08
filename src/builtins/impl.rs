@@ -7,8 +7,8 @@ use rnix::ast;
 
 use crate::value::{NixLambda, NixList};
 use crate::{
-    AsAttrSet, AsString, LazyNixValue, NixBacktrace, NixResult, NixValue, NixValueWrapped, NixVar,
-    Scope,
+    AsAttrSet, AsString, LazyNixValue, NixBacktrace, NixError, NixLabel, NixLabelKind,
+    NixLabelMessage, NixResult, NixValue, NixValueWrapped, NixVar, Scope,
 };
 
 use super::hash;
@@ -565,6 +565,27 @@ pub fn string_length(argument: NixValueWrapped) {
 #[builtin()]
 pub fn to_string(argument: String) {
     Ok(NixValue::String(argument).wrap())
+}
+
+#[builtin]
+pub fn throw(backtrace: Rc<NixBacktrace>, message: String) {
+    // TODO: in `nix-env -qa` and other commands that try
+    // to evaluate a derivation that throws an error is
+    // silently skipped (which is not the case for abort).
+
+    let NixBacktrace(span, backtrace) = &*backtrace;
+
+    let label = NixLabel::new(span.clone(), NixLabelMessage::Empty, NixLabelKind::Error);
+
+    let error = NixError {
+        message: format!("Throwing: {message}"),
+        labels: vec![label],
+        backtrace: backtrace.clone(),
+    };
+
+    print!("{error}");
+
+    std::process::exit(1)
 }
 
 #[builtin()]

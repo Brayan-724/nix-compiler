@@ -49,6 +49,7 @@ impl Scope {
         insert!(globals; null = NixValue::Null);
         insert!(globals; removeAttrs = builtins::RemoveAttrs::generate());
         insert!(globals; toString = builtins::ToString::generate());
+        insert!(globals; throw = builtins::Throw::generate());
         insert!(globals; true = NixValue::Bool(true));
         insert!(globals; builtins = builtins);
 

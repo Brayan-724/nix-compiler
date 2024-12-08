@@ -11,7 +11,7 @@ use crate::result::NixSpan;
 use crate::value::{NixLambda, NixList};
 use crate::{AsString, NixBacktrace, NixError, NixResult, NixValue, NixValueWrapped, Scope};
 
-pub use r#impl::{get_builtins, Abort, Import, Map, RemoveAttrs, ToString};
+pub use r#impl::{get_builtins, Abort, Import, Map, RemoveAttrs, Throw, ToString};
 
 pub trait FromNixExpr: Sized {
     fn from_nix_expr(
