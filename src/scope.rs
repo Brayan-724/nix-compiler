@@ -177,10 +177,6 @@ impl Scope {
 
             let set_value = set_value.resolve(backtrace.clone())?;
 
-            // while matches!(&*self.0.borrow(), LazyNixValue::UpdateResolve { .. }) {
-            //     set_value = LazyNixValue::resolve(&self.0, backtrace.clone())?;
-            // }
-
             if !set_value.borrow().is_attr_set() {
                 todo!("Error handling for {:#}", set_value.borrow());
             };
@@ -204,7 +200,10 @@ impl Scope {
                 .borrow()
                 .as_string()
                 .expect("Cannot cast as string")),
-            ast::Attr::Str(str) => Ok(str.to_string()),
+            ast::Attr::Str(str) => self
+                .visit_str(backtrace.clone(), str.clone())
+                // visit_str always returns a string concrete
+                .map(|v| v.as_concrete().unwrap().borrow().as_string().unwrap()),
         }
     }
 }

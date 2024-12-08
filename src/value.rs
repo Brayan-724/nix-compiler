@@ -407,9 +407,11 @@ impl AsString for NixValue {
     fn as_string(&self) -> Option<String> {
         // TODO: AttrSet to String
         match self {
-            NixValue::AttrSet(_) => None,
+            NixValue::AttrSet(_) => todo!(),
             NixValue::Bool(false) => Some(String::from("")),
             NixValue::Bool(true) => Some(String::from("1")),
+            NixValue::Float(n) => Some(n.to_string()),
+            NixValue::Int(n) => Some(n.to_string()),
             NixValue::Null => Some(String::from("")),
             NixValue::Path(path) => Some(path.display().to_string()),
             NixValue::String(str) => Some(str.clone()),
