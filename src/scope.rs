@@ -160,6 +160,8 @@ impl Scope {
             let set_value = value.borrow().get(&attr).unwrap();
 
             let Some(set_value) = set_value else {
+                // If `value` doesn't have `attr`, then create it
+                // as empty `AttrSet`
                 let (last, _) = value
                     .borrow_mut()
                     .insert(attr, NixValue::AttrSet(HashMap::new()).wrap_var())
@@ -173,6 +175,10 @@ impl Scope {
             };
 
             let set_value = set_value.resolve(backtrace.clone())?;
+
+            // while matches!(&*self.0.borrow(), LazyNixValue::UpdateResolve { .. }) {
+            //     set_value = LazyNixValue::resolve(&self.0, backtrace.clone())?;
+            // }
 
             if !set_value.borrow().is_attr_set() {
                 todo!("Error handling for {:#}", set_value.borrow());
@@ -192,11 +198,12 @@ impl Scope {
         match attr {
             ast::Attr::Ident(ident) => Ok(ident.ident_token().unwrap().text().to_owned()),
             ast::Attr::Dynamic(dynamic) => Ok(self
-                .visit_expr(backtrace, dynamic.expr().unwrap())?
+                .visit_expr(backtrace.clone(), dynamic.expr().unwrap())?
+                .resolve(backtrace)?
                 .borrow()
                 .as_string()
                 .expect("Cannot cast as string")),
-            ast::Attr::Str(_) => todo!(),
+            ast::Attr::Str(str) => Ok(str.to_string()),
         }
     }
 }

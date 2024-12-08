@@ -370,13 +370,10 @@ impl NixLambda {
 
                     let var = if let Some(var) = argument.get(varname).cloned() {
                         var
+                    } else if let Some(expr) = entry.default() {
+                        scope.visit_expr(backtrace.clone(), expr)?
                     } else {
-                        if let Some(expr) = entry.default() {
-                            LazyNixValue::Concrete(scope.visit_expr(backtrace.clone(), expr)?)
-                                .wrap_var()
-                        } else {
-                            todo!("Require {varname}");
-                        }
+                        todo!("Error handling: Require {varname}");
                     };
 
                     scope.set_variable(varname.to_owned(), var.clone());
@@ -390,7 +387,9 @@ impl NixLambda {
             }
         };
 
-        scope.visit_expr(backtrace, expr.clone())
+        scope
+            .visit_expr(backtrace.clone(), expr.clone())?
+            .resolve(backtrace)
     }
 }
 
@@ -439,5 +438,17 @@ impl AsAttrSet for NixValue {
         } else {
             None
         }
+    }
+}
+
+impl From<NixValue> for NixVar {
+    fn from(value: NixValue) -> Self {
+        value.wrap_var()
+    }
+}
+
+impl From<NixValueWrapped> for NixVar {
+    fn from(value: NixValueWrapped) -> Self {
+        Self(Rc::new(RefCell::new(LazyNixValue::Concrete(value))))
     }
 }

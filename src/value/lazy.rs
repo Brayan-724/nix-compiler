@@ -1,7 +1,8 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
+use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
-use std::{fmt, mem};
 
 use rnix::ast;
 
@@ -10,7 +11,7 @@ use crate::{
     NixValueWrapped, NixVar, Scope,
 };
 
-use super::NixLambda;
+use super::{NixLambda, NixValue};
 
 #[derive(Clone)]
 pub enum LazyNixValue {
@@ -21,6 +22,14 @@ pub enum LazyNixValue {
         Rc<Scope>,
         Rc<RefCell<Option<Box<dyn FnOnce(Rc<NixBacktrace>, Rc<Scope>) -> NixResult>>>>,
     ),
+    /// Partial resolve for update operator (`<expr> // <expr>`)
+    UpdateResolve {
+        lhs: NixValueWrapped,
+        rhs: ast::Expr,
+
+        backtrace: Rc<NixBacktrace>,
+        scope: Rc<Scope>,
+    },
     Resolving(Rc<NixBacktrace>),
 }
 
@@ -30,6 +39,7 @@ impl fmt::Debug for LazyNixValue {
             LazyNixValue::Concrete(value) => fmt::Debug::fmt(value.borrow().deref(), f),
             LazyNixValue::Pending(..) => f.write_str("<not-resolved>"),
             LazyNixValue::Eval(..) => f.write_str("<not-resolved>"),
+            LazyNixValue::UpdateResolve { lhs, .. } => fmt::Debug::fmt(lhs.borrow().deref(), f),
             LazyNixValue::Resolving(..) => f.write_str("<resolving>"),
         }
     }
@@ -41,6 +51,7 @@ impl fmt::Display for LazyNixValue {
             LazyNixValue::Concrete(value) => fmt::Display::fmt(value.borrow().deref(), f),
             LazyNixValue::Pending(..) => f.write_str("<not-resolved>"),
             LazyNixValue::Eval(..) => f.write_str("<not-resolved>"),
+            LazyNixValue::UpdateResolve { lhs, .. } => fmt::Display::fmt(lhs.borrow().deref(), f),
             LazyNixValue::Resolving(..) => f.write_str("<resolving>"),
         }
     }
@@ -96,7 +107,9 @@ impl LazyNixValue {
                     }
                 };
 
-                scope.visit_expr(backtrace, expr)
+                scope
+                    .visit_expr(backtrace.clone(), expr)?
+                    .resolve(backtrace)
             }),
         )
     }
@@ -108,20 +121,23 @@ impl LazyNixValue {
     pub fn as_concrete(&self) -> Option<NixValueWrapped> {
         if let LazyNixValue::Concrete(value) = self {
             Some(value.clone())
+        } else if let LazyNixValue::UpdateResolve { lhs, .. } = self {
+            Some(lhs.clone())
         } else {
             None
         }
     }
 
     pub fn resolve(this: &Rc<RefCell<Self>>, backtrace: Rc<NixBacktrace>) -> NixResult {
-        if let Some(value) = this.borrow().as_concrete() {
-            return Ok(value);
+        if let LazyNixValue::Concrete(value) = &*this.borrow() {
+            return Ok(value.clone());
         }
 
         let backtrace = match *this.borrow() {
             LazyNixValue::Concrete(_) => unreachable!(),
             LazyNixValue::Pending(ref backtrace, ..) => backtrace.clone(),
             LazyNixValue::Eval(ref backtrace, ..) => backtrace.clone(),
+            LazyNixValue::UpdateResolve { ref backtrace, .. } => backtrace.clone(),
             LazyNixValue::Resolving(ref def_backtrace) => {
                 let label = NixLabelMessage::Empty;
                 let kind = NixLabelKind::Error;
@@ -144,17 +160,88 @@ impl LazyNixValue {
             }
         };
 
-        let old = mem::replace(
-            this.borrow_mut().deref_mut(),
-            LazyNixValue::Resolving(backtrace.clone()),
-        );
+        let old = this.replace(LazyNixValue::Resolving(backtrace.clone()));
 
         match old {
             LazyNixValue::Concrete(..) | LazyNixValue::Resolving(..) => unreachable!(),
-            LazyNixValue::Pending(_, scope, expr) => {
-                let value = scope.visit_expr(backtrace, expr)?;
+            LazyNixValue::UpdateResolve {
+                lhs,
+                rhs,
+                backtrace,
+                scope,
+            } => {
+                this.replace(LazyNixValue::Concrete(lhs.clone()));
 
-                *this.borrow_mut().deref_mut() = LazyNixValue::Concrete(value.clone());
+                scope.visit_expr(backtrace.clone(), rhs).and_then(|rhs| {
+                    if matches!(&*rhs.0.borrow(), LazyNixValue::UpdateResolve { .. }) {
+                        let LazyNixValue::UpdateResolve {
+                            lhs: resolved_rhs,
+                            rhs,
+                            backtrace,
+                            scope,
+                        } = &&*rhs.0.borrow()
+                        else {
+                            unreachable!()
+                        };
+
+                        let resolved_lhs = resolved_rhs
+                            .borrow()
+                            .as_attr_set()
+                            .ok_or_else(|| todo!("Error handling"))
+                            .map(|rhs| {
+                                let lhs_set = lhs.borrow().as_attr_set().cloned().unwrap();
+                                let mut lhs = HashMap::with_capacity(lhs_set.len() + rhs.len());
+
+                                lhs.extend(lhs_set);
+                                lhs.extend(rhs.clone());
+
+                                NixValue::AttrSet(lhs).wrap()
+                            })?;
+
+                        *this.borrow_mut().deref_mut() = LazyNixValue::UpdateResolve {
+                            lhs: resolved_lhs.clone(),
+                            rhs: rhs.clone(),
+                            backtrace: backtrace.clone(),
+                            scope: scope.clone(),
+                        };
+
+                        Ok(resolved_lhs)
+                    } else {
+                        rhs.resolve(backtrace).and_then(|rhs| {
+                            rhs.borrow()
+                                .as_attr_set()
+                                .ok_or_else(|| todo!("Error handling"))
+                                .map(|rhs| {
+                                    let lhs_set = lhs.borrow().as_attr_set().cloned().unwrap();
+                                    let mut lhs = HashMap::with_capacity(lhs_set.len() + rhs.len());
+
+                                    lhs.extend(lhs_set);
+                                    lhs.extend(rhs.clone());
+
+                                    let value = NixValue::AttrSet(lhs).wrap();
+
+                                    *this.borrow_mut().deref_mut() =
+                                        LazyNixValue::Concrete(value.clone());
+
+                                    value
+                                })
+                        })
+                    }
+                })
+            }
+            LazyNixValue::Pending(_, scope, expr) => {
+                let value = scope.visit_expr(backtrace.clone(), expr)?;
+
+                let value = if matches!(&*value.0.borrow(), LazyNixValue::UpdateResolve { .. }) {
+                    this.replace(value.0.borrow().clone());
+
+                    LazyNixValue::resolve(this, backtrace)?
+                } else {
+                    let value = value.resolve(backtrace)?;
+                    this.replace(LazyNixValue::Concrete(value.clone()));
+
+                    value
+                };
 
                 Ok(value)
             }

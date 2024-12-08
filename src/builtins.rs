@@ -27,7 +27,9 @@ impl FromNixExpr for NixValueWrapped {
         scope: Rc<Scope>,
         expr: ast::Expr,
     ) -> NixResult<Self> {
-        scope.visit_expr(backtrace, expr)
+        scope
+            .visit_expr(backtrace.clone(), expr)?
+            .resolve(backtrace)
     }
 }
 
@@ -54,7 +56,7 @@ macro_rules! int_from_nix_expr {
 
         impl FromNixExpr for $ty {
             fn from_nix_expr(backtrace: Rc<NixBacktrace>,scope: Rc<Scope>, expr: ast::Expr) -> NixResult<Self> {
-                match *scope.visit_expr(backtrace, expr.clone())?.borrow() {
+                match *scope.visit_expr(backtrace.clone(), expr.clone())?.resolve(backtrace)?.borrow() {
                     NixValue::Int(i) => Ok(i as $ty),
                     _ => Err(NixError::todo(
                         NixSpan::from_ast_node(&scope.file, &expr).into(),
@@ -76,7 +78,9 @@ impl FromNixExpr for NixLambda {
         scope: Rc<Scope>,
         expr: ast::Expr,
     ) -> NixResult<Self> {
-        let value = scope.visit_expr(backtrace, expr.clone())?;
+        let value = scope
+            .visit_expr(backtrace.clone(), expr.clone())?
+            .resolve(backtrace)?;
         let Some(value) = value.borrow().as_lambda().cloned() else {
             return Err(NixError::todo(
                 NixSpan::from_ast_node(&scope.file, &expr).into(),
@@ -95,7 +99,9 @@ impl FromNixExpr for NixList {
         scope: Rc<Scope>,
         expr: ast::Expr,
     ) -> NixResult<Self> {
-        let value = scope.visit_expr(backtrace, expr.clone())?;
+        let value = scope
+            .visit_expr(backtrace.clone(), expr.clone())?
+            .resolve(backtrace)?;
         let Some(value) = value.borrow().as_list() else {
             return Err(NixError::todo(
                 NixSpan::from_ast_node(&scope.file, &expr).into(),
@@ -114,7 +120,9 @@ impl FromNixExpr for PathBuf {
         scope: Rc<Scope>,
         expr: ast::Expr,
     ) -> NixResult<Self> {
-        let value = scope.visit_expr(backtrace, expr.clone())?;
+        let value = scope
+            .visit_expr(backtrace.clone(), expr.clone())?
+            .resolve(backtrace)?;
         let Some(value) = value.borrow().as_path() else {
             return Err(NixError::todo(
                 NixSpan::from_ast_node(&scope.file, &expr).into(),
@@ -133,7 +141,9 @@ impl FromNixExpr for String {
         scope: Rc<Scope>,
         expr: ast::Expr,
     ) -> NixResult<Self> {
-        let value = scope.visit_expr(backtrace, expr.clone())?;
+        let value = scope
+            .visit_expr(backtrace.clone(), expr.clone())?
+            .resolve(backtrace)?;
         let Some(value) = value.borrow().as_string() else {
             return Err(NixError::todo(
                 NixSpan::from_ast_node(&scope.file, &expr).into(),

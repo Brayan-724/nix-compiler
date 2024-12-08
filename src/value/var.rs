@@ -40,11 +40,17 @@ impl NixVar {
     }
 
     pub fn resolve(&self, backtrace: Rc<NixBacktrace>) -> NixResult {
-        if let Some(value) = self.0.borrow().as_concrete() {
-            return Ok(value);
+        if let LazyNixValue::Concrete(value) = &*self.0.borrow() {
+            return Ok(value.clone());
         }
 
-        LazyNixValue::resolve(&self.0, backtrace)
+        let mut out_value = LazyNixValue::resolve(&self.0, backtrace.clone())?;
+
+        while matches!(&*self.0.borrow(), LazyNixValue::UpdateResolve { .. }) {
+            out_value = LazyNixValue::resolve(&self.0, backtrace.clone())?;
+        }
+
+        Ok(out_value)
     }
 
     pub fn resolve_set(&self, recursive: bool, backtrace: Rc<NixBacktrace>) -> NixResult {

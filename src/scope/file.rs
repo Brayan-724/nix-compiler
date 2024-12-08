@@ -53,6 +53,6 @@ impl FileScope {
 
         let out = scope.visit_root(backtrace.clone(), root)?;
 
-        Ok((backtrace, out))
+        Ok((backtrace.clone(), out.resolve(backtrace)?))
     }
 }

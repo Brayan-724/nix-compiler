@@ -22,10 +22,13 @@ pub fn abort(message: String) {
 pub fn all(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
     for item in list.0.iter() {
         let callback = callback.call(backtrace.clone(), item.clone())?;
-        let callback = callback.borrow().as_bool().ok_or_else(|| todo!("Error handling"))?;
+        let callback = callback
+            .borrow()
+            .as_bool()
+            .ok_or_else(|| todo!("Error handling"))?;
 
         if !callback {
-            return Ok(NixValue::Bool(false).wrap())
+            return Ok(NixValue::Bool(false).wrap());
         }
     }
 
@@ -36,10 +39,13 @@ pub fn all(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
 pub fn any(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
     for item in list.0.iter() {
         let callback = callback.call(backtrace.clone(), item.clone())?;
-        let callback = callback.borrow().as_bool().ok_or_else(|| todo!("Error handling"))?;
+        let callback = callback
+            .borrow()
+            .as_bool()
+            .ok_or_else(|| todo!("Error handling"))?;
 
         if callback {
-            return Ok(NixValue::Bool(true).wrap())
+            return Ok(NixValue::Bool(true).wrap());
         }
     }
 
@@ -573,10 +579,7 @@ pub fn try_eval(backtrace: Rc<NixBacktrace>, argument: (Rc<Scope>, ast::Expr)) {
 
     let mut result = HashMap::new();
     result.insert("success".to_string(), NixValue::Bool(true).wrap_var());
-    result.insert(
-        "value".to_string(),
-        LazyNixValue::Concrete(argument).wrap_var(),
-    );
+    result.insert("value".to_string(), argument);
 
     return Ok(NixValue::AttrSet(result).wrap());
 }
