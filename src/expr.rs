@@ -760,9 +760,8 @@ impl Scope {
             .visit_expr(backtrace.clone(), node.expr().unwrap())?
             .resolve(backtrace.clone())?;
 
-        let var = self.resolve_attr_path(backtrace.clone(), var, node.attrpath().unwrap());
+        let var = self.resolve_attr_path(backtrace.clone(), var, node.attrpath().unwrap())?;
 
-        // TODO: Needs to check if the error was a VariableNotFound
         if var.is_err() && node.default_expr().is_some() {
             self.visit_expr(backtrace, node.default_expr().unwrap())
         } else {

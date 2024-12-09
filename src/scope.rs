@@ -122,12 +122,13 @@ impl Scope {
         }
     }
 
+    /// The first Result is fair, the second is the VariableNotFound error
     pub fn resolve_attr_path<'a>(
         self: &Rc<Self>,
         backtrace: Rc<NixBacktrace>,
         value: NixValueWrapped,
         attr_path: ast::Attrpath,
-    ) -> NixResult<NixVar> {
+    ) -> NixResult<NixResult<NixVar>> {
         let mut attrs: Vec<_> = attr_path.attrs().collect();
         let last_attr = attrs.pop().unwrap();
 
@@ -137,7 +138,7 @@ impl Scope {
 
         let attr_set = attr_set.borrow();
 
-        attr_set.get(&attr).unwrap().ok_or_else(|| {
+        Ok(attr_set.get(&attr).unwrap().ok_or_else(|| {
             NixError::from_message(
                 NixLabel::new(
                     NixSpan::from_ast_node(&self.file, &last_attr).into(),
@@ -146,7 +147,7 @@ impl Scope {
                 ),
                 format!("Attribute '\x1b[1;95m{attr}\x1b[0m' missing"),
             )
-        })
+        }))
     }
 
     pub fn resolve_attr_set_path<'a>(
