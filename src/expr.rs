@@ -331,14 +331,15 @@ impl Scope {
                 |expr| self.visit_expr(backtrace.clone(), expr),
             )
         } else {
-            Err(NixError::from_message(
-                NixLabel::new(
+            Err(NixError {
+                message: "assert failed".to_owned(),
+                labels: vec![NixLabel::new(
                     NixSpan::from_ast_node(&self.file, &node.condition().unwrap()).into(),
                     NixLabelMessage::AssertionFailed,
                     NixLabelKind::Error,
-                ),
-                "assert failed",
-            ))
+                )],
+                backtrace: Some(backtrace),
+            })
         }
     }
 
@@ -533,8 +534,7 @@ impl Scope {
             .resolve(backtrace.clone())?;
 
         let has_attr = self
-            .resolve_attr_path(backtrace, value, node.attrpath().unwrap())
-            // TODO: Check VariableNotFound error
+            .resolve_attr_path(backtrace, value, node.attrpath().unwrap())?
             .is_ok();
 
         Ok(NixValue::Bool(has_attr).wrap_var())

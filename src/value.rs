@@ -347,7 +347,6 @@ impl NixLambda {
                         .text()
                         .to_owned();
 
-                    // TODO: Should set only the unused keys instead of the argument
                     scope.set_variable(
                         varname,
                         LazyNixValue::Concrete(argument_var.clone()).wrap_var(),
