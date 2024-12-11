@@ -45,13 +45,13 @@ fn main() {
         FileScope::from_path(&arg)
     };
 
-    let (backtrace, result) = file.evaluate(None).unwrap_or_else(|err| {
+    let (scope, backtrace, result) = file.evaluate(None).unwrap_or_else(|err| {
         eprintln!("{err}");
         std::process::exit(1);
     });
 
     let outputs = if is_flake {
-        flake::resolve_flake(backtrace.clone(), result).unwrap()
+        flake::resolve_flake(scope, backtrace.clone(), result).unwrap()
     } else {
         result
     };

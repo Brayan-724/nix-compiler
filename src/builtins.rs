@@ -5,47 +5,30 @@ use std::fmt::{self, Write};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use rnix::ast;
-
-use crate::result::NixSpan;
 use crate::value::{NixLambda, NixList};
-use crate::{AsString, NixBacktrace, NixError, NixResult, NixValue, NixValueWrapped, Scope};
+use crate::{AsString, NixBacktrace, NixResult, NixValue, NixValueWrapped, NixVar, Scope};
 
 pub use r#impl::{get_builtins, Abort, Import, Map, RemoveAttrs, Throw, ToString};
 
 pub trait FromNixExpr: Sized {
-    fn from_nix_expr(
-        backtrace: Rc<NixBacktrace>,
-        scope: Rc<Scope>,
-        expr: ast::Expr,
-    ) -> NixResult<Self>;
+    fn from_nix_expr(backtrace: Rc<NixBacktrace>, var: NixVar) -> NixResult<Self>;
 }
 
 impl FromNixExpr for NixValueWrapped {
-    fn from_nix_expr(
-        backtrace: Rc<NixBacktrace>,
-        scope: Rc<Scope>,
-        expr: ast::Expr,
-    ) -> NixResult<Self> {
-        scope
-            .visit_expr(backtrace.clone(), expr)?
-            .resolve(backtrace)
+    fn from_nix_expr(backtrace: Rc<NixBacktrace>, var: NixVar) -> NixResult<Self> {
+        var.resolve(backtrace)
     }
 }
 
-impl FromNixExpr for (Rc<Scope>, ast::Expr) {
-    fn from_nix_expr(_: Rc<NixBacktrace>, scope: Rc<Scope>, expr: ast::Expr) -> NixResult<Self> {
-        Ok((scope, expr))
+impl FromNixExpr for NixVar {
+    fn from_nix_expr(_: Rc<NixBacktrace>, var: NixVar) -> NixResult<Self> {
+        Ok(var)
     }
 }
 
-impl FromNixExpr for (Rc<NixBacktrace>, Rc<Scope>, ast::Expr) {
-    fn from_nix_expr(
-        backtrace: Rc<NixBacktrace>,
-        scope: Rc<Scope>,
-        expr: ast::Expr,
-    ) -> NixResult<Self> {
-        Ok((backtrace, scope, expr))
+impl FromNixExpr for (Rc<NixBacktrace>, NixVar) {
+    fn from_nix_expr(backtrace: Rc<NixBacktrace>, var: NixVar) -> NixResult<Self> {
+        Ok((backtrace, var))
     }
 }
 
@@ -55,14 +38,10 @@ macro_rules! int_from_nix_expr {
         use std::primitive::$ty;
 
         impl FromNixExpr for $ty {
-            fn from_nix_expr(backtrace: Rc<NixBacktrace>,scope: Rc<Scope>, expr: ast::Expr) -> NixResult<Self> {
-                match *scope.visit_expr(backtrace.clone(), expr.clone())?.resolve(backtrace)?.borrow() {
+            fn from_nix_expr(backtrace: Rc<NixBacktrace>, var: NixVar) -> NixResult<Self> {
+                match *var.resolve(backtrace)?.borrow() {
                     NixValue::Int(i) => Ok(i as $ty),
-                    _ => Err(NixError::todo(
-                        NixSpan::from_ast_node(&scope.file, &expr).into(),
-                        concat!("Error handling: ", stringify!($ty)," cast"),
-                        None
-                    ))
+                    _ => todo!(concat!("Error handling: ", stringify!($ty)," cast"))
                 }
             }
         }
@@ -73,86 +52,39 @@ int_from_nix_expr! {isize, i64, i32, i16, i8}
 int_from_nix_expr! {usize, u64, u32, u16, u8}
 
 impl FromNixExpr for NixLambda {
-    fn from_nix_expr(
-        backtrace: Rc<NixBacktrace>,
-        scope: Rc<Scope>,
-        expr: ast::Expr,
-    ) -> NixResult<Self> {
-        let value = scope
-            .visit_expr(backtrace.clone(), expr.clone())?
-            .resolve(backtrace)?;
-        let Some(value) = value.borrow().as_lambda().cloned() else {
-            return Err(NixError::todo(
-                NixSpan::from_ast_node(&scope.file, &expr).into(),
-                "Error handling: Lambda cast",
-                None,
-            ));
-        };
-
-        Ok(value)
+    fn from_nix_expr(backtrace: Rc<NixBacktrace>, var: NixVar) -> NixResult<Self> {
+        var.resolve(backtrace)?
+            .borrow()
+            .as_lambda()
+            .cloned()
+            .ok_or_else(|| todo!("Error handling: Lambda cast"))
     }
 }
 
 impl FromNixExpr for NixList {
-    fn from_nix_expr(
-        backtrace: Rc<NixBacktrace>,
-        scope: Rc<Scope>,
-        expr: ast::Expr,
-    ) -> NixResult<Self> {
-        let value = scope
-            .visit_expr(backtrace.clone(), expr.clone())?
-            .resolve(backtrace)?;
-        let Some(value) = value.borrow().as_list() else {
-            return Err(NixError::todo(
-                NixSpan::from_ast_node(&scope.file, &expr).into(),
-                "Error handling: List cast",
-                None,
-            ));
-        };
-
-        Ok(value)
+    fn from_nix_expr(backtrace: Rc<NixBacktrace>, var: NixVar) -> NixResult<Self> {
+        var.resolve(backtrace)?
+            .borrow()
+            .as_list()
+            .ok_or_else(|| todo!("Error handling: List cast"))
     }
 }
 
 impl FromNixExpr for PathBuf {
-    fn from_nix_expr(
-        backtrace: Rc<NixBacktrace>,
-        scope: Rc<Scope>,
-        expr: ast::Expr,
-    ) -> NixResult<Self> {
-        let value = scope
-            .visit_expr(backtrace.clone(), expr.clone())?
-            .resolve(backtrace)?;
-        let Some(value) = value.borrow().as_path() else {
-            return Err(NixError::todo(
-                NixSpan::from_ast_node(&scope.file, &expr).into(),
-                "Error handling: Path cast",
-                None,
-            ));
-        };
-
-        Ok(value)
+    fn from_nix_expr(backtrace: Rc<NixBacktrace>, var: NixVar) -> NixResult<Self> {
+        var.resolve(backtrace)?
+            .borrow()
+            .as_path()
+            .ok_or_else(|| todo!("Error handling: Path cast"))
     }
 }
 
 impl FromNixExpr for String {
-    fn from_nix_expr(
-        backtrace: Rc<NixBacktrace>,
-        scope: Rc<Scope>,
-        expr: ast::Expr,
-    ) -> NixResult<Self> {
-        let value = scope
-            .visit_expr(backtrace.clone(), expr.clone())?
-            .resolve(backtrace)?;
-        let Some(value) = value.borrow().as_string() else {
-            return Err(NixError::todo(
-                NixSpan::from_ast_node(&scope.file, &expr).into(),
-                "Error handling: String cast",
-                None,
-            ));
-        };
-
-        Ok(value)
+    fn from_nix_expr(backtrace: Rc<NixBacktrace>, var: NixVar) -> NixResult<Self> {
+        var.resolve(backtrace)?
+            .borrow()
+            .as_string()
+            .ok_or_else(|| todo!("Error handling: String cast"))
     }
 }
 
@@ -161,7 +93,7 @@ impl FromNixExpr for String {
 //     fn from_nix_expr(
 //             backtrace: Rc<NixBacktrace>,
 //             scope: Rc<Scope>,
-//             expr: ast::Expr,
+//             var: NixVar,
 //         ) -> NixResult<Self> {
 //         let value = scope.visit_expr(backtrace, expr.clone())?;
 //         let Some(value) = value.borrow().as_attr_set() else {
@@ -177,7 +109,7 @@ pub trait NixBuiltinInfo {
 pub trait NixBuiltin {
     fn get_name(&self) -> &'static str;
 
-    fn run(&self, backtrace: Rc<NixBacktrace>, scope: Rc<Scope>, argument: ast::Expr) -> NixResult;
+    fn run(&self, backtrace: Rc<NixBacktrace>, argument: NixVar) -> NixResult;
 }
 
 impl fmt::Debug for dyn NixBuiltin {

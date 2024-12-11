@@ -60,9 +60,8 @@ impl Builtin {
 
                 fn run(
                     &self,
-                    backtrace: ::std::rc::Rc<crate::result::NixBacktrace>,
-                    scope: ::std::rc::Rc<crate::scope::Scope>,
-                    argument: ::rnix::ast::Expr
+                    backtrace: ::std::rc::Rc<crate::NixBacktrace>,
+                    argument: crate::NixVar
                 ) -> crate::result::NixResult {
                     let Self(#(#params_list),*) = &self;
                     #(#params_decl)*
@@ -99,7 +98,7 @@ impl Builtin {
         Ok(quote_spanned! { self.func.span() =>
             impl #struct_name {
                 pub fn generate() -> crate::value::NixValue {
-                    crate::value::NixValue::Builtin(::std::rc::Rc::new(Box::new(#struct_name(#(#struct_def),*))))
+                    crate::value::NixValue::Lambda(crate::value::NixLambda::Builtin(::std::rc::Rc::new(Box::new(#struct_name(#(#struct_def),*)))))
                 }
 
                 fn run(#func_params) -> crate::result::NixResult {

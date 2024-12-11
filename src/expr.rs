@@ -81,9 +81,8 @@ impl Scope {
                             let file = self.file.clone();
 
                             LazyNixValue::new_eval(
-                                self.clone(),
                                 self.new_backtrace(backtrace.clone(), &from_expr),
-                                Box::new(move |backtrace, _scope| {
+                                Box::new(move |backtrace| {
                                     from.resolve(backtrace.clone())?
                                         .borrow()
                                         .as_attr_set()
@@ -123,14 +122,14 @@ impl Scope {
                             .insert(attr, value.wrap_var());
                     } else {
                         let value = {
+                            let scope = self.clone();
                             let attr = attr.clone();
                             let attr_node = attr_node.clone();
                             let file = self.file.clone();
 
                             LazyNixValue::new_eval(
-                                self.clone(),
                                 self.new_backtrace(backtrace.clone(), &attr_node),
-                                Box::new(move |backtrace, scope| {
+                                Box::new(move |backtrace| {
                                     let Some(value) = scope.get_variable(attr.clone()) else {
                                         return Err(NixError::from_message(
                                             NixLabel::new(
@@ -210,107 +209,18 @@ impl Scope {
         backtrace: Rc<NixBacktrace>,
         node: ast::Apply,
     ) -> NixResult<NixVar> {
-        let lambda = self
-            .visit_expr(
-                self.new_backtrace(backtrace.clone(), &node),
-                node.lambda().unwrap(),
-            )?
-            .resolve(backtrace.clone())?;
-
-        let lambda = lambda.borrow();
-
-        match lambda.deref() {
-            NixValue::Builtin(builtin) => builtin
-                .run(backtrace, self.clone(), node.argument().unwrap())
-                .map(LazyNixValue::Concrete)
-                .map(LazyNixValue::wrap_var),
-            NixValue::Lambda(NixLambda(scope, param, expr)) => {
-                let scope = scope.clone().new_child();
-
-                match param {
-                    NixLambdaParam::Pattern(pattern) => {
-                        let argument_var = self
-                            .visit_expr(backtrace.clone(), node.argument().unwrap())?
-                            .resolve(backtrace.clone())?;
-                        let argument = argument_var.borrow();
-                        let Some(argument) = argument.as_attr_set() else {
-                            todo!("Error handling")
-                        };
-
-                        if let Some(pat_bind) = pattern.pat_bind() {
-                            let varname = pat_bind
-                                .ident()
-                                .unwrap()
-                                .ident_token()
-                                .unwrap()
-                                .text()
-                                .to_owned();
-
-                            // TODO: Should set only the unused keys instead of the argument
-                            scope.set_variable(
-                                varname,
-                                LazyNixValue::Concrete(argument_var.clone()).wrap_var(),
-                            );
-                        }
-
-                        let has_ellipsis = pattern.ellipsis_token().is_some();
-
-                        let mut unused =
-                            (!has_ellipsis).then(|| argument.keys().collect::<Vec<_>>());
-
-                        for entry in pattern.pat_entries() {
-                            let varname = entry.ident().unwrap().ident_token().unwrap();
-                            let varname = varname.text();
-
-                            if let Some(unused) = unused.as_mut() {
-                                if let Some(idx) = unused.iter().position(|&key| key == varname) {
-                                    unused.swap_remove(idx);
-                                }
-                            }
-
-                            let var = if let Some(var) = argument.get(varname).cloned() {
-                                var
-                            } else if let Some(expr) = entry.default() {
-                                scope.visit_expr(backtrace.clone(), expr)?
-                            } else {
-                                todo!("Require {varname}");
-                            };
-
-                            scope.set_variable(varname.to_owned(), var.clone());
-                        }
-
-                        if let Some(unused) = unused {
-                            if !unused.is_empty() {
-                                todo!("Handle error: Unused keys: {unused:?}")
-                            }
-                        }
-                    }
-                    NixLambdaParam::Ident(param) => {
-                        assert!(
-                            scope
-                                .set_variable(
-                                    param.clone(),
-                                    LazyNixValue::Pending(
-                                        self.new_backtrace(
-                                            backtrace.clone(),
-                                            &node.argument().unwrap()
-                                        ),
-                                        self.clone(),
-                                        node.argument().unwrap()
-                                    )
-                                    .wrap_var()
-                                )
-                                .is_none(),
-                            "Variable {param} already exists"
-                        );
-                    }
-                }
-
-                scope.visit_expr(backtrace.clone(), expr.clone())
-            }
-
-            a => todo!("Error handling: {a:#?}"),
-        }
+        self.visit_expr(
+            self.new_backtrace(backtrace.clone(), &node),
+            node.lambda().unwrap(),
+        )?
+        .resolve(backtrace.clone())?
+        .borrow()
+        .as_lambda()
+        .ok_or_else(|| todo!("Error handling: Lambda cast"))
+        .and_then(|l| {
+            let argument = self.visit_expr(backtrace.clone(), node.argument().unwrap())?;
+            l.call(backtrace, argument)
+        })
     }
 
     pub fn visit_assert(
@@ -598,7 +508,7 @@ impl Scope {
             ),
         };
 
-        Ok(NixValue::Lambda(NixLambda(
+        Ok(NixValue::Lambda(NixLambda::Apply(
             self.clone().new_child(),
             param,
             node.body().unwrap(),

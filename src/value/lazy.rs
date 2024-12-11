@@ -19,8 +19,7 @@ pub enum LazyNixValue {
     Pending(Rc<NixBacktrace>, Rc<Scope>, ast::Expr),
     Eval(
         Rc<NixBacktrace>,
-        Rc<Scope>,
-        Rc<RefCell<Option<Box<dyn FnOnce(Rc<NixBacktrace>, Rc<Scope>) -> NixResult>>>>,
+        Rc<RefCell<Option<Box<dyn FnOnce(Rc<NixBacktrace>) -> NixResult>>>>,
     ),
     /// Partial resolve for update operator (`<expr> // <expr>`)
     UpdateResolve {
@@ -75,11 +74,10 @@ impl LazyNixValue {
 
 impl LazyNixValue {
     pub fn new_eval(
-        scope: Rc<Scope>,
         backtrace: Rc<NixBacktrace>,
-        fun: Box<dyn FnOnce(Rc<NixBacktrace>, Rc<Scope>) -> NixResult>,
+        fun: Box<dyn FnOnce(Rc<NixBacktrace>) -> NixResult>,
     ) -> Self {
-        LazyNixValue::Eval(backtrace, scope, Rc::new(RefCell::new(Option::Some(fun))))
+        LazyNixValue::Eval(backtrace, Rc::new(RefCell::new(Option::Some(fun))))
     }
 
     pub fn new_callback_eval(
@@ -87,31 +85,37 @@ impl LazyNixValue {
         callback: NixLambda,
         value: NixVar,
     ) -> Self {
-        let NixLambda(scope, param, expr) = callback.clone();
-        let span = Rc::new(NixSpan::from_ast_node(&scope.file, &expr));
+        match callback {
+            NixLambda::Apply(scope, param, expr) => {
+                let span = Rc::new(NixSpan::from_ast_node(&scope.file, &expr));
 
-        LazyNixValue::new_eval(
-            scope.new_child(),
-            Rc::new(NixBacktrace(span.clone(), Some(backtrace))),
-            Box::new(move |backtrace, scope| {
-                match param {
-                    crate::NixLambdaParam::Ident(ident) => {
-                        scope.set_variable(ident, value);
-                    }
-                    crate::NixLambdaParam::Pattern(_) => {
-                        return Err(crate::NixError::todo(
-                            span,
-                            "Pattern lambda param",
-                            Some(backtrace),
-                        ))
-                    }
-                };
+                LazyNixValue::new_eval(
+                    Rc::new(NixBacktrace(span.clone(), Some(backtrace))),
+                    Box::new(move |backtrace| {
+                        match param {
+                            crate::NixLambdaParam::Ident(ident) => {
+                                scope.set_variable(ident, value);
+                            }
+                            crate::NixLambdaParam::Pattern(_) => {
+                                return Err(crate::NixError::todo(
+                                    span,
+                                    "Pattern lambda param",
+                                    Some(backtrace),
+                                ))
+                            }
+                        };
 
-                scope
-                    .visit_expr(backtrace.clone(), expr)?
-                    .resolve(backtrace)
-            }),
-        )
+                        scope
+                            .visit_expr(backtrace.clone(), expr)?
+                            .resolve(backtrace)
+                    }),
+                )
+            }
+            NixLambda::Builtin(builtin) => LazyNixValue::new_eval(
+                backtrace,
+                Box::new(move |backtrace| builtin.run(backtrace, value)),
+            ),
+        }
     }
 
     pub fn wrap_var(self) -> NixVar {
@@ -245,13 +249,11 @@ impl LazyNixValue {
 
                 Ok(value)
             }
-            LazyNixValue::Eval(_, scope, eval) => {
+            LazyNixValue::Eval(_, eval) => {
                 let value = eval
                     .borrow_mut()
                     .take()
-                    .expect("Eval cannot be called twice")(
-                    backtrace, scope.clone()
-                )?;
+                    .expect("Eval cannot be called twice")(backtrace)?;
 
                 *this.borrow_mut().deref_mut() = LazyNixValue::Concrete(value.clone());
 

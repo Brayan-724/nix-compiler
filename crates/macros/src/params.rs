@@ -91,9 +91,8 @@ impl NixBuiltinParams {
             .map(|span| {
                 quote_spanned! {span.clone() =>
                     Option<::std::rc::Rc<(
-                        ::std::rc::Rc<crate::result::NixBacktrace>,
-                        ::std::rc::Rc<Scope>,
-                        ::rnix::ast::Expr
+                        ::std::rc::Rc<crate::NixBacktrace>,
+                        crate::NixVar
                     )>>
                 }
             })
@@ -112,7 +111,7 @@ fn parse_param(
 
     if is_last {
         let decl = quote! {};
-        let def = quote_spanned! {param.span() => <#ty as crate::builtins::FromNixExpr>::from_nix_expr(backtrace, scope, argument)?};
+        let def = quote_spanned! {param.span() => <#ty as crate::builtins::FromNixExpr>::from_nix_expr(backtrace, argument)?};
 
         (decl, def)
     } else {
@@ -125,16 +124,16 @@ fn parse_param(
             .map(|_| format_ident!("None", span = param.span()))
             .collect::<Vec<_>>();
         let new_param =
-            quote_spanned! {ty.span() => Some(::std::rc::Rc::new((backtrace, scope, argument)))};
+            quote_spanned! {ty.span() => Some(::std::rc::Rc::new((backtrace, argument)))};
 
         let def = quote_spanned! {param.span() =>
-            <#ty as crate::builtins::FromNixExpr>::from_nix_expr(#param_ident.0.clone(), #param_ident.1.clone(), #param_ident.2.clone())?
+            <#ty as crate::builtins::FromNixExpr>::from_nix_expr(#param_ident.0.clone(), #param_ident.1.clone())?
         };
 
         let decl = quote_spanned! {ty.span() =>
             let Some(#param_ident) = #param_ident else {
                 return Ok(
-                    NixValue::Builtin(::std::rc::Rc::new(Box::new(#struct_name(#(Some(#prev_params.clone()),)* #new_param #(, #next_params)*))))
+                    crate::value::NixValue::Lambda(crate::value::NixLambda::Builtin(::std::rc::Rc::new(Box::new(#struct_name(#(Some(#prev_params.clone()),)* #new_param #(, #next_params)*)))))
                         .wrap()
                 )
             };

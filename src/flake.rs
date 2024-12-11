@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::result::{NixBacktrace, NixSpan};
-use crate::value::NixLambda;
+use crate::result::NixBacktrace;
 use crate::{AsAttrSet, LazyNixValue, NixResult, NixValue, NixValueWrapped, Scope};
 
-pub fn resolve_flake(backtrace: Rc<NixBacktrace>, result: NixValueWrapped) -> NixResult {
+pub fn resolve_flake(
+    scope: Rc<Scope>,
+    backtrace: Rc<NixBacktrace>,
+    result: NixValueWrapped,
+) -> NixResult {
     let result = result.borrow();
 
     let Some(flake) = result.as_attr_set() else {
@@ -60,33 +63,32 @@ pub fn resolve_flake(backtrace: Rc<NixBacktrace>, result: NixValueWrapped) -> Ni
         Ok((key.clone(), NixValue::AttrSet(out).wrap_var()))
     });
 
-    let outputs = flake.get("outputs").expect("Flake should export `outputs`");
+    let outputs_var = flake.get("outputs").expect("Flake should export `outputs`");
 
-    let outputs = outputs.resolve(backtrace.clone())?;
+    let outputs = outputs_var.resolve(backtrace.clone())?;
     let outputs = outputs.borrow();
 
-    let Some(NixLambda(scope, _param, expr)) = outputs.as_lambda() else {
+    let Some(lambda) = outputs.as_lambda() else {
         todo!("outputs should be a lambda")
     };
 
-    let scope = scope.clone().new_child();
-    let outputs = LazyNixValue::Pending(
-        Rc::new(NixBacktrace(
-            Rc::new(NixSpan::from_ast_node(&scope.file, expr)),
-            Some(backtrace.clone()),
-        )),
-        scope.clone(),
-        expr.clone(),
-    )
-    .wrap_var();
+    let mut value = HashMap::new();
+
+    macro_rules! insert {
+        ($key:ident = $value:expr) => {
+            value.insert($key, $value)
+        };
+    }
+
+    value.insert("self".to_owned(), outputs_var.clone());
 
     for input in inputs {
         let (input, input_path) = input?;
 
-        scope.set_variable(input, input_path);
+        insert!(input = input_path);
     }
 
-    scope.set_variable("self".to_owned(), outputs.clone());
-
-    outputs.resolve(backtrace)
+    lambda
+        .call(backtrace.clone(), NixValue::AttrSet(value).wrap_var())?
+        .resolve(backtrace)
 }

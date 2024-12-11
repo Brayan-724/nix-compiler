@@ -113,10 +113,10 @@ impl Scope {
 
         println!("Importing {path:#?}");
 
-        let (backtrace, result) = FileScope::from_path(path).evaluate(Some(backtrace))?;
+        let (scope, backtrace, result) = FileScope::from_path(path).evaluate(Some(backtrace))?;
 
         if path.file_name() == Some(OsStr::new("flake.nix")) {
-            flake::resolve_flake(backtrace, result)
+            flake::resolve_flake(scope, backtrace, result)
         } else {
             Ok(result)
         }

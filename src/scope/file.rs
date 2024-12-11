@@ -39,7 +39,7 @@ impl FileScope {
     pub fn evaluate(
         self: Rc<Self>,
         backtrace: Option<Rc<NixBacktrace>>,
-    ) -> NixResult<(Rc<NixBacktrace>, NixValueWrapped)> {
+    ) -> NixResult<(Rc<Scope>, Rc<NixBacktrace>, NixValueWrapped)> {
         let root = rnix::Root::parse(&self.content)
             .ok()
             .map_err(|error| NixError::from_parse_error(&self, error))?;
@@ -53,6 +53,6 @@ impl FileScope {
 
         let out = scope.visit_root(backtrace.clone(), root)?;
 
-        Ok((backtrace.clone(), out.resolve(backtrace)?))
+        Ok((scope, backtrace.clone(), out.resolve(backtrace)?))
     }
 }

@@ -23,6 +23,7 @@ pub fn all(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
     for item in list.0.iter() {
         let callback = callback.call(backtrace.clone(), item.clone())?;
         let callback = callback
+            .resolve(backtrace.clone())?
             .borrow()
             .as_bool()
             .ok_or_else(|| todo!("Error handling"))?;
@@ -40,6 +41,7 @@ pub fn any(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
     for item in list.0.iter() {
         let callback = callback.call(backtrace.clone(), item.clone())?;
         let callback = callback
+            .resolve(backtrace.clone())?
             .borrow()
             .as_bool()
             .ok_or_else(|| todo!("Error handling"))?;
@@ -123,7 +125,9 @@ pub fn concat_map(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixLis
     let mut out = vec![];
 
     for item in list.0.iter() {
-        let item = callback.call(backtrace.clone(), item.clone())?;
+        let item = callback
+            .call(backtrace.clone(), item.clone())?
+            .resolve(backtrace.clone())?;
 
         let Some(item) = item.borrow().as_list() else {
             todo!("Error handling");
@@ -186,7 +190,9 @@ pub fn filter(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
     let mut out = Vec::with_capacity(list.0.len());
 
     for value in list.0.iter() {
-        let item = callback.call(backtrace.clone(), value.clone())?;
+        let item = callback
+            .call(backtrace.clone(), value.clone())?
+            .resolve(backtrace.clone())?;
 
         let Some(item) = item.borrow().as_bool() else {
             todo!("Error handling");
@@ -381,7 +387,7 @@ pub fn map(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
     for value in list.0.iter() {
         let value = callback.call(backtrace.clone(), value.clone())?;
 
-        out.push(LazyNixValue::Concrete(value).wrap_var());
+        out.push(value);
     }
 
     Ok(NixValue::List(NixList(Rc::new(out))).wrap())
@@ -397,8 +403,9 @@ pub fn map_attrs(backtrace: Rc<NixBacktrace>, callback: NixLambda, set: NixValue
     let mut out = HashMap::new();
 
     for (key, value) in set {
-        let callback =
-            callback.call(backtrace.clone(), NixValue::String(key.clone()).wrap_var())?;
+        let callback = callback
+            .call(backtrace.clone(), NixValue::String(key.clone()).wrap_var())?
+            .resolve(backtrace.clone())?;
         let callback = callback.borrow();
         let Some(callback) = callback.as_lambda() else {
             todo!("Error handling")
@@ -406,7 +413,7 @@ pub fn map_attrs(backtrace: Rc<NixBacktrace>, callback: NixLambda, set: NixValue
 
         let value = callback.call(backtrace.clone(), value.clone())?;
 
-        out.insert(key.clone(), LazyNixValue::Concrete(value).wrap_var());
+        out.insert(key.clone(), value);
     }
 
     Ok(NixValue::AttrSet(out).wrap())
@@ -589,12 +596,14 @@ pub fn throw(backtrace: Rc<NixBacktrace>, message: String) {
 }
 
 #[builtin()]
-pub fn try_eval(backtrace: Rc<NixBacktrace>, argument: (Rc<Scope>, ast::Expr)) {
-    let (scope, node) = argument;
-
-    let Ok(argument) = scope.visit_expr(backtrace, node) else {
+pub fn try_eval(backtrace: Rc<NixBacktrace>, argument: NixVar) {
+    if let Err(_) = argument.resolve(backtrace) {
         let mut result = HashMap::new();
         result.insert("success".to_string(), NixValue::Bool(false).wrap_var());
+        // `value = false;` is unfortunate but removing it is a breaking change.
+        // https://github.com/NixOS/nix/blob/master/src/libexpr/primops.cc#L942
+        result.insert("value".to_string(), NixValue::Bool(false).wrap_var());
+
         return Ok(NixValue::AttrSet(result).wrap());
     };
 

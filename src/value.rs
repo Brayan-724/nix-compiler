@@ -24,7 +24,11 @@ pub enum NixLambdaParam {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct NixLambda(pub Rc<Scope>, pub NixLambdaParam, pub ast::Expr);
+pub enum NixLambda {
+    Apply(Rc<Scope>, NixLambdaParam, ast::Expr),
+    /// https://nix.dev/manual/nix/2.24/language/builtins
+    Builtin(Rc<Box<dyn NixBuiltin>>),
+}
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct NixList(pub Rc<Vec<NixVar>>);
@@ -36,8 +40,6 @@ pub type NixAttrSet = HashMap<String, NixVar>;
 pub enum NixValue {
     AttrSet(NixAttrSet),
     Bool(bool),
-    /// https://nix.dev/manual/nix/2.24/language/builtins
-    Builtin(Rc<Box<dyn NixBuiltin>>),
     Float(f64),
     Int(i64),
     Lambda(NixLambda),
@@ -64,10 +66,10 @@ impl fmt::Debug for NixValue {
             }
             NixValue::Bool(true) => f.write_str("true"),
             NixValue::Bool(false) => f.write_str("false"),
-            NixValue::Builtin(builtin) => fmt::Debug::fmt(builtin, f),
             NixValue::Float(val) => f.write_str(&val.to_string()),
             NixValue::Int(val) => f.write_str(&val.to_string()),
-            NixValue::Lambda(..) => f.write_str("<lamda>"),
+            NixValue::Lambda(NixLambda::Apply(..)) => f.write_str("<lamda>"),
+            NixValue::Lambda(NixLambda::Builtin(builtin)) => fmt::Debug::fmt(builtin, f),
             NixValue::List(list) => {
                 let mut debug_list = f.debug_list();
 
@@ -145,10 +147,10 @@ impl fmt::Display for NixValue {
             }
             NixValue::Bool(true) => f.write_str("true"),
             NixValue::Bool(false) => f.write_str("false"),
-            NixValue::Builtin(builtin) => fmt::Display::fmt(&builtin, f),
             NixValue::Float(val) => f.write_str(&val.to_string()),
             NixValue::Int(val) => f.write_str(&val.to_string()),
-            NixValue::Lambda(..) => f.write_str("<lamda>"),
+            NixValue::Lambda(NixLambda::Apply(..)) => f.write_str("<lamda>"),
+            NixValue::Lambda(NixLambda::Builtin(builtin)) => fmt::Display::fmt(builtin, f),
             NixValue::List(list) => {
                 let width = f.width().unwrap_or_default();
                 let outside_pad = " ".repeat(width);
@@ -286,7 +288,6 @@ impl NixValue {
             NixValue::Null => "null",
             NixValue::Path(_) => "path",
             NixValue::String(_) => "string",
-            NixValue::Builtin(_) => "lambda",
         }
     }
 
@@ -324,71 +325,76 @@ impl NixValue {
 }
 
 impl NixLambda {
-    pub fn call(&self, backtrace: Rc<NixBacktrace>, value: NixVar) -> NixResult {
-        let NixLambda(scope, param, expr) = self;
+    pub fn call(&self, backtrace: Rc<NixBacktrace>, value: NixVar) -> NixResult<NixVar> {
+        match self {
+            NixLambda::Apply(scope, param, expr) => {
+                match param {
+                    crate::NixLambdaParam::Ident(ident) => {
+                        scope.set_variable(ident.clone(), value);
+                    }
+                    crate::NixLambdaParam::Pattern(pattern) => {
+                        let argument_var = value.resolve(backtrace.clone())?;
+                        let argument = argument_var.borrow();
+                        let Some(argument) = argument.as_attr_set() else {
+                            todo!("Error handling")
+                        };
 
-        match param {
-            crate::NixLambdaParam::Ident(ident) => {
-                scope.set_variable(ident.clone(), value);
-            }
-            crate::NixLambdaParam::Pattern(pattern) => {
-                let argument_var = value.resolve(backtrace.clone())?;
-                let argument = argument_var.borrow();
-                let Some(argument) = argument.as_attr_set() else {
-                    todo!("Error handling")
-                };
+                        if let Some(pat_bind) = pattern.pat_bind() {
+                            let varname = pat_bind
+                                .ident()
+                                .unwrap()
+                                .ident_token()
+                                .unwrap()
+                                .text()
+                                .to_owned();
 
-                if let Some(pat_bind) = pattern.pat_bind() {
-                    let varname = pat_bind
-                        .ident()
-                        .unwrap()
-                        .ident_token()
-                        .unwrap()
-                        .text()
-                        .to_owned();
+                            scope.set_variable(
+                                varname,
+                                LazyNixValue::Concrete(argument_var.clone()).wrap_var(),
+                            );
+                        }
 
-                    scope.set_variable(
-                        varname,
-                        LazyNixValue::Concrete(argument_var.clone()).wrap_var(),
-                    );
-                }
+                        let has_ellipsis = pattern.ellipsis_token().is_some();
 
-                let has_ellipsis = pattern.ellipsis_token().is_some();
+                        let mut unused =
+                            (!has_ellipsis).then(|| argument.keys().collect::<Vec<_>>());
 
-                let mut unused = (!has_ellipsis).then(|| argument.keys().collect::<Vec<_>>());
+                        for entry in pattern.pat_entries() {
+                            let varname = entry.ident().unwrap().ident_token().unwrap();
+                            let varname = varname.text();
 
-                for entry in pattern.pat_entries() {
-                    let varname = entry.ident().unwrap().ident_token().unwrap();
-                    let varname = varname.text();
+                            if let Some(unused) = unused.as_mut() {
+                                if let Some(idx) = unused.iter().position(|&key| key == varname) {
+                                    unused.swap_remove(idx);
+                                }
+                            }
 
-                    if let Some(unused) = unused.as_mut() {
-                        if let Some(idx) = unused.iter().position(|&key| key == varname) {
-                            unused.swap_remove(idx);
+                            let var = if let Some(var) = argument.get(varname).cloned() {
+                                var
+                            } else if let Some(expr) = entry.default() {
+                                scope.visit_expr(backtrace.clone(), expr)?
+                            } else {
+                                todo!("Error handling: Require {varname}");
+                            };
+
+                            scope.set_variable(varname.to_owned(), var.clone());
+                        }
+
+                        if let Some(unused) = unused {
+                            if !unused.is_empty() {
+                                todo!("Handle error: Unused keys: {unused:?}")
+                            }
                         }
                     }
+                };
 
-                    let var = if let Some(var) = argument.get(varname).cloned() {
-                        var
-                    } else if let Some(expr) = entry.default() {
-                        scope.visit_expr(backtrace.clone(), expr)?
-                    } else {
-                        todo!("Error handling: Require {varname}");
-                    };
-
-                    scope.set_variable(varname.to_owned(), var.clone());
-                }
-
-                if let Some(unused) = unused {
-                    if !unused.is_empty() {
-                        todo!("Handle error: Unused keys: {unused:?}")
-                    }
-                }
+                scope.visit_expr(backtrace.clone(), expr.clone())
             }
-        };
-
-        scope
-            .visit_expr(backtrace.clone(), expr.clone())?
-            .resolve(backtrace)
+            NixLambda::Builtin(builtin) => builtin
+                .run(backtrace, value)
+                .map(LazyNixValue::Concrete)
+                .map(LazyNixValue::wrap_var),
+        }
     }
 }
 
