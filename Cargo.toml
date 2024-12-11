@@ -17,3 +17,4 @@ rowan = "0.15.0" # Ast interaction with rnix
 # Utility
 thiserror = "1.0.65"
 openssl = "0.10.68"
+regex = "1.11.1"
