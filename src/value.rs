@@ -372,7 +372,8 @@ impl NixLambda {
                             let var = if let Some(var) = argument.get(varname).cloned() {
                                 var
                             } else if let Some(expr) = entry.default() {
-                                scope.visit_expr(backtrace.clone(), expr)?
+                                LazyNixValue::Pending(backtrace.clone(), scope.clone(), expr)
+                                    .wrap_var()
                             } else {
                                 todo!("Error handling: Require {varname}");
                             };
