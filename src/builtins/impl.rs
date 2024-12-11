@@ -564,6 +564,43 @@ pub fn substring(start: usize, len: isize, s: String) {
 }
 
 #[builtin]
+pub fn split(regex: String, content: String) {
+    // TODO: Should do a regex caching, specially for loop optimisation
+    let regex = regex::Regex::new(&regex).unwrap();
+
+    let mut out = vec![];
+
+    let last_idx = regex.find_iter(&content).fold(0, |last_idx, matches| {
+        out.push(NixValue::String(String::from(&content[last_idx..matches.start()])).wrap_var());
+
+        out.push(
+            NixValue::List(NixList(Rc::new(
+                regex
+                    .captures(matches.as_str())
+                    .expect("Capture a string that already match")
+                    .iter()
+                    .skip(1)
+                    .map(|c| {
+                        c.map(|c| c.as_str())
+                            .map(String::from)
+                            .map(NixValue::String)
+                            .unwrap_or_default()
+                            .wrap_var()
+                    })
+                    .collect::<Vec<_>>(),
+            )))
+            .wrap_var(),
+        );
+
+        matches.end()
+    });
+
+    out.push(NixValue::String(String::from(&content[last_idx..])).wrap_var());
+
+    Ok(NixValue::List(NixList(Rc::new(out))).wrap())
+}
+
+#[builtin]
 pub fn string_length(argument: NixValueWrapped) {
     Ok(NixValue::Int(argument.borrow().as_string().unwrap().len() as i64).wrap())
 }
