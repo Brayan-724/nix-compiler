@@ -185,6 +185,13 @@ pub fn elem(backtrace: Rc<NixBacktrace>, x: NixValueWrapped, xs: NixList) {
 }
 
 #[builtin]
+pub fn elemAt(backtrace: Rc<NixBacktrace>, xs: NixList, x: usize) {
+    xs.0.get(x)
+        .ok_or_else(|| todo!("Error handling: Out of bounds"))?
+        .resolve(backtrace)
+}
+
+#[builtin]
 pub fn filter(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
     let mut out = Vec::with_capacity(list.0.len());
 
