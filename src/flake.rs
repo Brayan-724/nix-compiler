@@ -4,11 +4,7 @@ use std::rc::Rc;
 use crate::result::NixBacktrace;
 use crate::{AsAttrSet, LazyNixValue, NixResult, NixValue, NixValueWrapped, Scope};
 
-pub fn resolve_flake(
-    scope: Rc<Scope>,
-    backtrace: Rc<NixBacktrace>,
-    result: NixValueWrapped,
-) -> NixResult {
+pub fn resolve_flake(backtrace: Rc<NixBacktrace>, result: NixValueWrapped) -> NixResult {
     let result = result.borrow();
 
     let Some(flake) = result.as_attr_set() else {

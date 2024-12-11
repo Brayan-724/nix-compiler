@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use nix_macros::{builtin, gen_builtins};
-use rnix::ast;
 
 use crate::value::{NixLambda, NixList};
 use crate::{
