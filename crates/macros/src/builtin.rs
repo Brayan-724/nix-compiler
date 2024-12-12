@@ -27,7 +27,12 @@ pub struct Builtin {
 
 impl Builtin {
     pub fn new(func: Function) -> Result<Self, Error> {
-        let struct_name = func.name.to_string().to_case(Case::Pascal);
+        let func_name = func.name.to_string();
+        let struct_name = func_name
+            .strip_prefix("r#")
+            .unwrap_or(&func_name)
+            .to_case(Case::Pascal);
+
         let struct_name = format_ident!("{struct_name}", span = func.name.span());
 
         append_builtin(struct_name.to_string());
