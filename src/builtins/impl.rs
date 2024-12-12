@@ -425,6 +425,31 @@ pub fn map_attrs(backtrace: Rc<NixBacktrace>, callback: NixLambda, set: NixValue
     Ok(NixValue::AttrSet(out).wrap())
 }
 
+#[builtin]
+pub fn r#match(regex: String, content: String) {
+    // TODO: Should do a regex caching, specially for loop optimisation
+    let regex = regex::Regex::new(&regex).unwrap();
+
+    Ok(regex
+        .captures(content.as_str())
+        .map(|c| {
+            NixValue::List(NixList(Rc::new(
+                c.iter()
+                    .skip(1)
+                    .map(|c| {
+                        c.map(|c| c.as_str())
+                            .map(String::from)
+                            .map(NixValue::String)
+                            .unwrap_or_default()
+                            .wrap_var()
+                    })
+                    .collect::<Vec<_>>(),
+            )))
+        })
+        .unwrap_or_default()
+        .wrap())
+}
+
 #[builtin()]
 pub fn path_exists(path: PathBuf) {
     let exists = path.try_exists().is_ok_and(|x| x);
