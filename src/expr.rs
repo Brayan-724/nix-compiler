@@ -444,7 +444,8 @@ impl Scope {
             .resolve(backtrace.clone())?;
 
         let has_attr = self
-            .resolve_attr_path(backtrace, value, node.attrpath().unwrap())?
+            .resolve_attr_path(backtrace.clone(), value, node.attrpath().unwrap())?
+            .and_then(|v| v.resolve(backtrace))
             .is_ok();
 
         Ok(NixValue::Bool(has_attr).wrap_var())

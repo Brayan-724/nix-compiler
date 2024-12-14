@@ -298,6 +298,14 @@ pub fn import(backtrace: Rc<NixBacktrace>, argument: NixValueWrapped) {
 }
 
 #[builtin]
+/// Log a variable and return it
+pub fn inspect(backtrace: Rc<NixBacktrace>, argument: NixVar) {
+    let argument = argument.resolve_set(true, backtrace)?;
+    println!("{argument:#?}");
+    Ok(argument)
+}
+
+#[builtin]
 pub fn is_attrs(argument: NixValueWrapped) {
     Ok(NixValue::Bool(argument.borrow().is_attr_set()).wrap())
 }
