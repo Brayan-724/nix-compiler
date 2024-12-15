@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use crate::value::{NixLambda, NixList};
-use crate::{AsString, NixBacktrace, NixResult, NixValue, NixValueWrapped, NixVar};
+use crate::{NixBacktrace, NixResult, NixValue, NixValueWrapped, NixVar};
 
 pub use r#impl::{get_builtins, Abort, Import, Map, RemoveAttrs, Throw, ToString};
 

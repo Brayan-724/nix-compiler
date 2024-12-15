@@ -1,6 +1,5 @@
 mod file;
 
-use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::Path;
 use std::rc::Rc;
@@ -11,8 +10,8 @@ pub use file::FileScope;
 
 use crate::result::{NixLabel, NixLabelKind, NixLabelMessage, NixSpan};
 use crate::{
-    builtins, flake, AsAttrSet, AsString, NixBacktrace, NixError, NixResult, NixValue,
-    NixValueWrapped, NixVar,
+    builtins, flake, NixAttrSet, NixBacktrace, NixError, NixResult, NixValue, NixValueWrapped,
+    NixVar,
 };
 
 #[derive(Debug)]
@@ -39,7 +38,7 @@ impl Scope {
             };
         }
 
-        let mut globals = HashMap::new();
+        let mut globals = NixAttrSet::new();
         let builtins = builtins::get_builtins();
 
         insert!(globals; abort = builtins::Abort::generate());
@@ -62,7 +61,7 @@ impl Scope {
 
         Rc::new(Self {
             file: file_scope,
-            variables: NixValue::AttrSet(HashMap::new()).wrap(),
+            variables: NixValue::AttrSet(NixAttrSet::new()).wrap(),
             parent: Some(parent),
             backtrace: None,
         })
@@ -71,7 +70,7 @@ impl Scope {
     pub fn new_child(self: Rc<Self>) -> Rc<Scope> {
         Rc::new(Scope {
             file: self.file.clone(),
-            variables: NixValue::AttrSet(HashMap::new()).wrap(),
+            variables: NixValue::AttrSet(NixAttrSet::new()).wrap(),
             parent: Some(self),
             backtrace: None,
         })
@@ -166,7 +165,7 @@ impl Scope {
                 // as empty `AttrSet`
                 let (last, _) = value
                     .borrow_mut()
-                    .insert(attr, NixValue::AttrSet(HashMap::new()).wrap_var())
+                    .insert(attr, NixValue::AttrSet(NixAttrSet::new()).wrap_var())
                     .unwrap();
 
                 return self.resolve_attr_set_path(

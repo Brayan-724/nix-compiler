@@ -1,8 +1,7 @@
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::result::NixBacktrace;
-use crate::{AsAttrSet, LazyNixValue, NixResult, NixValue, NixValueWrapped, Scope};
+use crate::{LazyNixValue, NixAttrSet, NixResult, NixValue, NixValueWrapped, Scope};
 
 pub fn resolve_flake(backtrace: Rc<NixBacktrace>, result: NixValueWrapped) -> NixResult {
     let result = result.borrow();
@@ -14,7 +13,7 @@ pub fn resolve_flake(backtrace: Rc<NixBacktrace>, result: NixValueWrapped) -> Ni
     let inputs = flake
         .get("inputs")
         .cloned()
-        .unwrap_or_else(|| NixValue::AttrSet(HashMap::new()).wrap_var());
+        .unwrap_or_else(|| NixValue::AttrSet(NixAttrSet::new()).wrap_var());
 
     let inputs = inputs.resolve(backtrace.clone())?;
     let inputs = inputs.borrow();
@@ -43,7 +42,7 @@ pub fn resolve_flake(backtrace: Rc<NixBacktrace>, result: NixValueWrapped) -> Ni
 
         let flake = Scope::import_path(backtrace.clone(), flake_path)?;
 
-        let mut out = HashMap::new();
+        let mut out = NixAttrSet::new();
 
         out.insert(
             "_type".to_owned(),
@@ -68,7 +67,7 @@ pub fn resolve_flake(backtrace: Rc<NixBacktrace>, result: NixValueWrapped) -> Ni
         todo!("outputs should be a lambda")
     };
 
-    let mut value = HashMap::new();
+    let mut value = NixAttrSet::new();
 
     macro_rules! insert {
         ($key:ident = $value:expr) => {

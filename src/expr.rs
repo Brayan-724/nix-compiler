@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::ops::Deref;
 use std::rc::Rc;
 
@@ -8,8 +7,8 @@ use rowan::ast::AstNode;
 use crate::result::{NixBacktrace, NixSpan};
 use crate::value::{NixLambda, NixList};
 use crate::{
-    AsAttrSet, AsString, LazyNixValue, NixError, NixLabel, NixLabelKind, NixLabelMessage,
-    NixLambdaParam, NixResult, NixValue, NixValueWrapped, NixVar, Scope,
+    LazyNixValue, NixAttrSet, NixError, NixLabel, NixLabelKind, NixLabelMessage, NixLambdaParam,
+    NixResult, NixValue, NixValueWrapped, NixVar, Scope,
 };
 
 impl Scope {
@@ -269,7 +268,7 @@ impl Scope {
 
             Ok(LazyNixValue::Concrete(scope.variables.clone()).wrap_var())
         } else {
-            let out = NixValue::AttrSet(HashMap::new()).wrap();
+            let out = NixValue::AttrSet(NixAttrSet::new()).wrap();
 
             for entry in node.entries() {
                 self.insert_entry_to_attrset(backtrace.clone(), out.clone(), entry)?;

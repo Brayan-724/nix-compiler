@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
@@ -7,11 +6,11 @@ use std::rc::Rc;
 use rnix::ast;
 
 use crate::{
-    AsAttrSet, NixBacktrace, NixError, NixLabel, NixLabelKind, NixLabelMessage, NixResult, NixSpan,
+    NixBacktrace, NixError, NixLabel, NixLabelKind, NixLabelMessage, NixResult, NixSpan,
     NixValueWrapped, NixVar, Scope,
 };
 
-use super::{NixLambda, NixValue};
+use super::{NixAttrSet, NixLambda, NixValue};
 
 #[derive(Clone)]
 pub enum LazyNixValue {
@@ -194,7 +193,7 @@ impl LazyNixValue {
                             .ok_or_else(|| todo!("Error handling"))
                             .map(|rhs| {
                                 let lhs_set = lhs.borrow().as_attr_set().cloned().unwrap();
-                                let mut lhs = HashMap::with_capacity(lhs_set.len() + rhs.len());
+                                let mut lhs = NixAttrSet::new();
 
                                 lhs.extend(lhs_set);
                                 lhs.extend(rhs.clone());
@@ -217,7 +216,7 @@ impl LazyNixValue {
                                 .ok_or_else(|| todo!("Error handling"))
                                 .map(|rhs| {
                                     let lhs_set = lhs.borrow().as_attr_set().cloned().unwrap();
-                                    let mut lhs = HashMap::with_capacity(lhs_set.len() + rhs.len());
+                                    let mut lhs = NixAttrSet::new();
 
                                     lhs.extend(lhs_set);
                                     lhs.extend(rhs.clone());

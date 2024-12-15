@@ -13,9 +13,7 @@ pub use result::{
     NixBacktrace, NixError, NixLabel, NixLabelKind, NixLabelMessage, NixResult, NixSpan,
 };
 pub use scope::{FileScope, Scope};
-pub use value::{
-    AsAttrSet, AsString, LazyNixValue, NixLambdaParam, NixValue, NixValueWrapped, NixVar,
-};
+pub use value::{LazyNixValue, NixAttrSet, NixLambdaParam, NixValue, NixValueWrapped, NixVar};
 
 fn main() {
     let mut iter = env::args().skip(1).peekable();

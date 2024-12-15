@@ -2,7 +2,7 @@ mod lazy;
 mod var;
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt::{self, Write};
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -33,7 +33,7 @@ pub enum NixLambda {
 #[derive(Clone, PartialEq, Eq)]
 pub struct NixList(pub Rc<Vec<NixVar>>);
 
-pub type NixAttrSet = HashMap<String, NixVar>;
+pub type NixAttrSet = BTreeMap<String, NixVar>;
 
 /// https://nix.dev/manual/nix/2.24/language/types
 #[derive(Default, PartialEq)]
@@ -322,6 +322,42 @@ impl NixValue {
     pub fn is_string(&self) -> bool {
         matches!(self, NixValue::String(_))
     }
+
+    pub fn can_cast_string(&self) -> bool {
+        self.as_string().is_some()
+    }
+
+    // https://nix.dev/manual/nix/2.24/language/builtins.html?highlight=abort#builtins-toString
+    pub fn as_string(&self) -> Option<String> {
+        // TODO: AttrSet to String
+        match self {
+            NixValue::AttrSet(_) => todo!(),
+            NixValue::Bool(false) => Some(String::from("")),
+            NixValue::Bool(true) => Some(String::from("1")),
+            NixValue::Float(n) => Some(n.to_string()),
+            NixValue::Int(n) => Some(n.to_string()),
+            NixValue::Null => Some(String::from("")),
+            NixValue::Path(path) => Some(path.display().to_string()),
+            NixValue::String(str) => Some(str.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_attr_set(&self) -> Option<&NixAttrSet> {
+        if let NixValue::AttrSet(set) = self {
+            Some(set)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_attr_set_mut(&mut self) -> Option<&mut NixAttrSet> {
+        if let NixValue::AttrSet(set) = self {
+            Some(set)
+        } else {
+            None
+        }
+    }
 }
 
 impl NixLambda {
@@ -395,56 +431,6 @@ impl NixLambda {
                 .run(backtrace, value)
                 .map(LazyNixValue::Concrete)
                 .map(LazyNixValue::wrap_var),
-        }
-    }
-}
-
-pub trait AsString {
-    fn as_string(&self) -> Option<String>;
-
-    #[allow(dead_code)]
-    fn is_string(&self) -> bool {
-        self.as_string().is_some()
-    }
-}
-
-impl AsString for NixValue {
-    // https://nix.dev/manual/nix/2.24/language/builtins.html?highlight=abort#builtins-toString
-    fn as_string(&self) -> Option<String> {
-        // TODO: AttrSet to String
-        match self {
-            NixValue::AttrSet(_) => todo!(),
-            NixValue::Bool(false) => Some(String::from("")),
-            NixValue::Bool(true) => Some(String::from("1")),
-            NixValue::Float(n) => Some(n.to_string()),
-            NixValue::Int(n) => Some(n.to_string()),
-            NixValue::Null => Some(String::from("")),
-            NixValue::Path(path) => Some(path.display().to_string()),
-            NixValue::String(str) => Some(str.clone()),
-            _ => None,
-        }
-    }
-}
-
-pub trait AsAttrSet {
-    fn as_attr_set(&self) -> Option<&HashMap<String, NixVar>>;
-    fn as_attr_set_mut(&mut self) -> Option<&mut HashMap<String, NixVar>>;
-}
-
-impl AsAttrSet for NixValue {
-    fn as_attr_set(&self) -> Option<&HashMap<String, NixVar>> {
-        if let NixValue::AttrSet(set) = self {
-            Some(set)
-        } else {
-            None
-        }
-    }
-
-    fn as_attr_set_mut(&mut self) -> Option<&mut HashMap<String, NixVar>> {
-        if let NixValue::AttrSet(set) = self {
-            Some(set)
-        } else {
-            None
         }
     }
 }

@@ -4,10 +4,10 @@ use std::rc::Rc;
 
 use nix_macros::{builtin, gen_builtins};
 
-use crate::value::{NixLambda, NixList};
+use crate::value::{NixAttrSet, NixLambda, NixList};
 use crate::{
-    AsAttrSet, AsString, LazyNixValue, NixBacktrace, NixError, NixLabel, NixLabelKind,
-    NixLabelMessage, NixResult, NixValue, NixValueWrapped, NixVar, Scope,
+    LazyNixValue, NixBacktrace, NixError, NixLabel, NixLabelKind, NixLabelMessage, NixResult,
+    NixValue, NixValueWrapped, NixVar, Scope,
 };
 
 use super::hash;
@@ -60,14 +60,17 @@ pub fn attr_names(set: NixValueWrapped) {
         todo!("Error handling");
     };
 
-    let names = set
-        .keys()
+    let mut names = Vec::with_capacity(set.len());
+    names.extend(set.keys());
+    names.sort();
+
+    let names = names
+        .into_iter()
         .cloned()
         .map(NixValue::String)
         .map(NixValue::wrap_var)
         .collect::<Vec<NixVar>>();
 
-    // TODO: needs to be sorted
     Ok(NixValue::List(NixList(Rc::new(names))).wrap())
 }
 
@@ -94,10 +97,21 @@ pub fn attr_values(set: NixValueWrapped) {
         todo!("Error handling");
     };
 
-    let names = set.values().cloned().collect::<Vec<NixVar>>();
+    let mut names = Vec::with_capacity(set.len());
+    names.extend(set.keys());
+    names.sort();
 
-    // TODO: needs to be sorted
-    Ok(NixValue::List(NixList(Rc::new(names))).wrap())
+    // println!("{names:?};");
+
+    let values = names
+        .into_iter()
+        .map(|k| set.get(k).unwrap())
+        .cloned()
+        .collect::<Vec<NixVar>>();
+
+    // println!("{values:?} = {set:#?}");
+
+    Ok(NixValue::List(NixList(Rc::new(values))).wrap())
 }
 
 #[builtin]
@@ -389,7 +403,7 @@ pub fn list_to_attrs(backtrace: Rc<NixBacktrace>, list: NixList) {
 
             Ok((name, value))
         })
-        .collect::<NixResult<HashMap<String, NixVar>>>()?;
+        .collect::<NixResult<NixAttrSet>>()?;
 
     Ok(NixValue::AttrSet(out).wrap())
 }
@@ -414,9 +428,9 @@ pub fn map_attrs(backtrace: Rc<NixBacktrace>, callback: NixLambda, set: NixValue
         todo!("Error handling");
     };
 
-    let mut out = HashMap::new();
+    let mut out = NixAttrSet::new();
 
-    for (key, value) in set {
+    for (key, value) in set.iter() {
         let callback = callback
             .call(backtrace.clone(), NixValue::String(key.clone()).wrap_var())?
             .resolve(backtrace.clone())?;
@@ -674,7 +688,7 @@ pub fn throw(backtrace: Rc<NixBacktrace>, message: String) {
 #[builtin()]
 pub fn try_eval(backtrace: Rc<NixBacktrace>, argument: NixVar) {
     if let Err(_) = argument.resolve(backtrace) {
-        let mut result = HashMap::new();
+        let mut result = NixAttrSet::new();
         result.insert("success".to_string(), NixValue::Bool(false).wrap_var());
         // `value = false;` is unfortunate but removing it is a breaking change.
         // https://github.com/NixOS/nix/blob/master/src/libexpr/primops.cc#L942
@@ -683,7 +697,7 @@ pub fn try_eval(backtrace: Rc<NixBacktrace>, argument: NixVar) {
         return Ok(NixValue::AttrSet(result).wrap());
     };
 
-    let mut result = HashMap::new();
+    let mut result = NixAttrSet::new();
     result.insert("success".to_string(), NixValue::Bool(true).wrap_var());
     result.insert("value".to_string(), argument);
 

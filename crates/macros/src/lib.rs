@@ -42,10 +42,7 @@ fn gen_builtins_impl(input: TokenStream) -> Result<TokenStream, Error> {
 
     Ok(quote! {
         pub fn get_builtins() -> NixValue {
-            use std::collections::HashMap;
-            use crate::NixValue;
-
-            let mut builtins = HashMap::new();
+            let mut builtins = crate::NixAttrSet::new();
 
             #(#builtins;)*
 
