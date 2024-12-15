@@ -60,12 +60,8 @@ pub fn attr_names(set: NixValueWrapped) {
         todo!("Error handling");
     };
 
-    let mut names = Vec::with_capacity(set.len());
-    names.extend(set.keys());
-    names.sort();
-
-    let names = names
-        .into_iter()
+    let names = set
+        .keys()
         .cloned()
         .map(NixValue::String)
         .map(NixValue::wrap_var)
@@ -97,19 +93,7 @@ pub fn attr_values(set: NixValueWrapped) {
         todo!("Error handling");
     };
 
-    let mut names = Vec::with_capacity(set.len());
-    names.extend(set.keys());
-    names.sort();
-
-    // println!("{names:?};");
-
-    let values = names
-        .into_iter()
-        .map(|k| set.get(k).unwrap())
-        .cloned()
-        .collect::<Vec<NixVar>>();
-
-    // println!("{values:?} = {set:#?}");
+    let values = set.values().cloned().collect::<Vec<NixVar>>();
 
     Ok(NixValue::List(NixList(Rc::new(values))).wrap())
 }
