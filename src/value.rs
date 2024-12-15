@@ -364,6 +364,8 @@ impl NixLambda {
     pub fn call(&self, backtrace: Rc<NixBacktrace>, value: NixVar) -> NixResult<NixVar> {
         match self {
             NixLambda::Apply(scope, param, expr) => {
+                let scope = scope.clone().new_child();
+
                 match param {
                     crate::NixLambdaParam::Ident(ident) => {
                         scope.set_variable(ident.clone(), value);

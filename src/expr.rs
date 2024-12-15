@@ -508,12 +508,10 @@ impl Scope {
             ),
         };
 
-        Ok(NixValue::Lambda(NixLambda::Apply(
-            self.clone().new_child(),
-            param,
-            node.body().unwrap(),
-        ))
-        .wrap_var())
+        Ok(
+            NixValue::Lambda(NixLambda::Apply(self.clone(), param, node.body().unwrap()))
+                .wrap_var(),
+        )
     }
 
     pub fn visit_legacylet(

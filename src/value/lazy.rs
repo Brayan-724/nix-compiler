@@ -91,6 +91,8 @@ impl LazyNixValue {
                 LazyNixValue::new_eval(
                     Rc::new(NixBacktrace(span.clone(), Some(backtrace))),
                     Box::new(move |backtrace| {
+                        let scope = scope.new_child();
+
                         match param {
                             crate::NixLambdaParam::Ident(ident) => {
                                 scope.set_variable(ident, value);
