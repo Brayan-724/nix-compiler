@@ -174,7 +174,7 @@ pub fn elem(backtrace: Rc<NixBacktrace>, x: NixValueWrapped, xs: NixList) {
     for item in xs.0.iter() {
         let item = item.resolve(backtrace.clone())?;
 
-        if x.borrow().eq(&*item.borrow()) {
+        if x.borrow().try_eq(&*item.borrow(), backtrace.clone())? {
             return Ok(NixValue::Bool(true).wrap());
         }
     }

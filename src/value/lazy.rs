@@ -62,12 +62,12 @@ impl LazyNixValue {
         backtrace: Rc<NixBacktrace>,
     ) -> NixResult<bool> {
         let lhs = LazyNixValue::resolve(lhs, backtrace.clone())?;
-        let rhs = LazyNixValue::resolve(rhs, backtrace)?;
+        let rhs = LazyNixValue::resolve(rhs, backtrace.clone())?;
 
         let lhs = lhs.borrow();
         let rhs = rhs.borrow();
 
-        Ok(*lhs == *rhs)
+        Ok(lhs.try_eq(&*rhs, backtrace)?)
     }
 }
 

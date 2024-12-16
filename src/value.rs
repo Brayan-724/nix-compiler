@@ -23,7 +23,7 @@ pub enum NixLambdaParam {
     Pattern(ast::Pattern),
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub enum NixLambda {
     Apply(Rc<Scope>, NixLambdaParam, ast::Expr),
     /// https://nix.dev/manual/nix/2.24/language/builtins
@@ -208,34 +208,43 @@ impl fmt::Display for NixValue {
     }
 }
 
-impl PartialEq for NixValue {
-    fn eq(&self, other: &Self) -> bool {
+impl NixValue {
+    pub fn try_eq(&self, other: &Self, backtrace: Rc<NixBacktrace>) -> NixResult<bool> {
         match (self, other) {
             (Self::AttrSet(v1), Self::AttrSet(v2)) => {
                 // TODO: If both sets denote a derivation (type = "derivation"),
                 // then compare their outPaths.
                 // https://github.com/NixOS/nix/blob/da7e3be8fc4338e9cd7bb49eac3cbcf5f0560850/src/libexpr/eval.cc#L2758-L2765
-                v1 == v2
-            },
-            (Self::Bool(v1), Self::Bool(v2)) => v1 == v2,
-            (Self::Float(v1), Self::Float(v2)) => v1 == v2,
-            (Self::Float(v1), Self::Int(v2)) => *v1 == *v2 as f64,
-            (Self::Int(v1), Self::Int(v2)) => v1 == v2,
-            (Self::Int(v1), Self::Float(v2)) => *v1 as f64 == *v2,
+
+                if v1.len() != v2.len() {
+                    return Ok(false);
+                }
+
+                for (a, b) in v1.iter().zip(v2) {
+                    if a.0 != b.0 || !a.1.try_eq(b.1, backtrace.clone())? {
+                        return Ok(false);
+                    }
+                }
+
+                Ok(true)
+            }
+            (Self::Bool(v1), Self::Bool(v2)) => Ok(v1 == v2),
+            (Self::Float(v1), Self::Float(v2)) => Ok(v1 == v2),
+            (Self::Float(v1), Self::Int(v2)) => Ok(*v1 == *v2 as f64),
+            (Self::Int(v1), Self::Int(v2)) => Ok(v1 == v2),
+            (Self::Int(v1), Self::Float(v2)) => Ok(*v1 as f64 == *v2),
             // Functions are incomparable.
-            (Self::Lambda(..), Self::Lambda(..)) => false,
-            (Self::List(v1), Self::List(v2)) => v1 == v2,
-            (Self::Null, Self::Null) => true,
-            (Self::Path(v1), Self::Path(v2)) => v1 == v2,
-            (Self::String(v1), Self::String(v2)) => v1 == v2,
+            (Self::Lambda(..), Self::Lambda(..)) => Ok(false),
+            (Self::List(v1), Self::List(v2)) => Ok(v1 == v2),
+            (Self::Null, Self::Null) => Ok(true),
+            (Self::Path(v1), Self::Path(v2)) => Ok(v1 == v2),
+            (Self::String(v1), Self::String(v2)) => Ok(v1 == v2),
 
             // Value types are not comparable
-            (_, _) => false,
+            (_, _) => Ok(false),
         }
     }
-}
 
-impl NixValue {
     pub fn wrap(self) -> NixValueWrapped {
         Rc::new(RefCell::new(self))
     }
@@ -383,6 +392,16 @@ impl NixValue {
             Some(set)
         } else {
             None
+        }
+    }
+}
+
+impl PartialEq for NixLambda {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (NixLambda::Apply(_, _, v1), NixLambda::Apply(_, _, v2)) => v1 == v2,
+            (NixLambda::Builtin(v1), NixLambda::Builtin(v2)) => v1 == v2,
+            _ => false,
         }
     }
 }

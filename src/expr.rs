@@ -362,8 +362,8 @@ impl Scope {
                 }),
             ast::BinOpKind::Equal => self
                 .visit_expr(backtrace.clone(), node.rhs().unwrap())
-                .and_then(|rhs| rhs.resolve(backtrace))
-                .map(|rhs| rhs.borrow().deref().eq(&lhs.borrow()))
+                .and_then(|rhs| rhs.resolve(backtrace.clone()))
+                .and_then(|rhs| rhs.borrow().deref().try_eq(&*lhs.borrow(), backtrace))
                 .map(NixValue::Bool)
                 .map(NixValue::wrap_var),
             ast::BinOpKind::Implication => lhs
@@ -405,8 +405,9 @@ impl Scope {
             )),
             ast::BinOpKind::NotEqual => self
                 .visit_expr(backtrace.clone(), node.rhs().unwrap())
-                .and_then(|rhs| rhs.resolve(backtrace))
-                .map(|rhs| rhs.borrow().deref().ne(&lhs.borrow()))
+                .and_then(|rhs| rhs.resolve(backtrace.clone()))
+                .and_then(|rhs| rhs.borrow().deref().try_eq(&*lhs.borrow(), backtrace))
+                .map(std::ops::Not::not)
                 .map(NixValue::Bool)
                 .map(NixValue::wrap_var),
             ast::BinOpKind::Or => lhs

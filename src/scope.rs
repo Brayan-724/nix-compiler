@@ -22,14 +22,6 @@ pub struct Scope {
     pub parent: Option<Rc<Scope>>,
 }
 
-impl PartialEq for Scope {
-    fn eq(&self, other: &Self) -> bool {
-        self.file == other.file && self.variables == other.variables && self.parent == other.parent
-    }
-}
-
-impl Eq for Scope {}
-
 impl Scope {
     pub fn new_with_builtins(file_scope: Rc<FileScope>) -> Rc<Self> {
         macro_rules! insert {
