@@ -36,7 +36,7 @@ pub struct NixList(pub Rc<Vec<NixVar>>);
 pub type NixAttrSet = BTreeMap<String, NixVar>;
 
 /// https://nix.dev/manual/nix/2.24/language/types
-#[derive(Default, PartialEq)]
+#[derive(Default)]
 pub enum NixValue {
     AttrSet(NixAttrSet),
     Bool(bool),
@@ -204,6 +204,33 @@ impl fmt::Display for NixValue {
                 f.write_str(s)?;
                 f.write_char('"')
             }
+        }
+    }
+}
+
+impl PartialEq for NixValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::AttrSet(v1), Self::AttrSet(v2)) => {
+                // TODO: If both sets denote a derivation (type = "derivation"),
+                // then compare their outPaths.
+                // https://github.com/NixOS/nix/blob/da7e3be8fc4338e9cd7bb49eac3cbcf5f0560850/src/libexpr/eval.cc#L2758-L2765
+                v1 == v2
+            },
+            (Self::Bool(v1), Self::Bool(v2)) => v1 == v2,
+            (Self::Float(v1), Self::Float(v2)) => v1 == v2,
+            (Self::Float(v1), Self::Int(v2)) => *v1 == *v2 as f64,
+            (Self::Int(v1), Self::Int(v2)) => v1 == v2,
+            (Self::Int(v1), Self::Float(v2)) => *v1 as f64 == *v2,
+            // Functions are incomparable.
+            (Self::Lambda(..), Self::Lambda(..)) => false,
+            (Self::List(v1), Self::List(v2)) => v1 == v2,
+            (Self::Null, Self::Null) => true,
+            (Self::Path(v1), Self::Path(v2)) => v1 == v2,
+            (Self::String(v1), Self::String(v2)) => v1 == v2,
+
+            // Value types are not comparable
+            (_, _) => false,
         }
     }
 }
