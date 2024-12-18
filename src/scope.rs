@@ -125,11 +125,23 @@ impl Scope {
 
         let attr_set = self.resolve_attr_set_path(backtrace.clone(), value, attrs.into_iter())?;
 
+        let attr_set = match attr_set {
+            Ok(ok) => ok,
+            Err(e) => return Ok(Err(e)),
+        };
+
         let attr = self.resolve_attr(backtrace.clone(), &last_attr)?;
 
         let attr_set = attr_set.borrow();
 
-        Ok(attr_set.get((&*backtrace).clone(), &attr)?.ok_or_else(|| {
+        let val = attr_set.get((&*backtrace).clone(), &attr);
+
+        let val = match val {
+            Ok(ok) => ok,
+            Err(e) => return Ok(Err(e)),
+        };
+
+        Ok(val.ok_or_else(|| {
             NixError::from_message(
                 NixLabel::new(
                     NixSpan::from_ast_node(&self.file, &last_attr).into(),
@@ -146,11 +158,14 @@ impl Scope {
         backtrace: Rc<NixBacktrace>,
         value: NixValueWrapped,
         mut attr_path: impl Iterator<Item = ast::Attr>,
-    ) -> NixResult {
+    ) -> NixResult<NixResult<NixValueWrapped>> {
         if let Some(attr) = attr_path.next() {
             let attr = self.resolve_attr(backtrace.clone(), &attr)?;
 
-            let set_value = value.borrow().get((&*backtrace).clone(), &attr)?;
+            let set_value = match value.borrow().get((&*backtrace).clone(), &attr) {
+                Ok(v) => v,
+                Err(e) => return Ok(Err(e)),
+            };
 
             let Some(set_value) = set_value else {
                 // If `value` doesn't have `attr`, then create it
@@ -175,7 +190,7 @@ impl Scope {
 
             self.resolve_attr_set_path(backtrace, set_value, attr_path)
         } else {
-            Ok(value)
+            Ok(Ok(value))
         }
     }
 

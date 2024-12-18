@@ -25,7 +25,7 @@ impl Scope {
             .expect("Attrpath requires at least one attribute");
 
         let target =
-            self.resolve_attr_set_path(backtrace.clone(), out.clone(), attr_path.into_iter())?;
+            self.resolve_attr_set_path(backtrace.clone(), out.clone(), attr_path.into_iter())??;
 
         if !target.borrow().is_attr_set() {
             todo!("Error handling")
@@ -467,7 +467,6 @@ impl Scope {
 
         let has_attr = self
             .resolve_attr_path(backtrace.clone(), value, node.attrpath().unwrap())?
-            .and_then(|v| v.resolve(backtrace))
             .is_ok();
 
         Ok(NixValue::Bool(has_attr).wrap_var())
