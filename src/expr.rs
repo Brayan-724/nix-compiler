@@ -208,6 +208,11 @@ impl Scope {
         backtrace: Rc<NixBacktrace>,
         node: ast::Apply,
     ) -> NixResult<NixVar> {
+        let backtrace = Rc::new(NixBacktrace(
+            NixSpan::from_ast_node(&self.file, &node).into(),
+            Some((&*backtrace).clone()).into(),
+        ));
+
         self.visit_expr(
             self.new_backtrace(backtrace.clone(), &node),
             node.lambda().unwrap(),
@@ -451,6 +456,11 @@ impl Scope {
         backtrace: Rc<NixBacktrace>,
         node: ast::HasAttr,
     ) -> NixResult<NixVar> {
+        let backtrace = Rc::new(NixBacktrace(
+            NixSpan::from_ast_node(&self.file, &node).into(),
+            Some((&*backtrace).clone()).into(),
+        ));
+
         let value = self
             .visit_expr(backtrace.clone(), node.expr().unwrap())?
             .resolve(backtrace.clone())?;

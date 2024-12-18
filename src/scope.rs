@@ -125,11 +125,11 @@ impl Scope {
 
         let attr_set = self.resolve_attr_set_path(backtrace.clone(), value, attrs.into_iter())?;
 
-        let attr = self.resolve_attr(backtrace, &last_attr)?;
+        let attr = self.resolve_attr(backtrace.clone(), &last_attr)?;
 
         let attr_set = attr_set.borrow();
 
-        Ok(attr_set.get(&attr).unwrap().ok_or_else(|| {
+        Ok(attr_set.get((&*backtrace).clone(), &attr)?.ok_or_else(|| {
             NixError::from_message(
                 NixLabel::new(
                     NixSpan::from_ast_node(&self.file, &last_attr).into(),
@@ -150,7 +150,7 @@ impl Scope {
         if let Some(attr) = attr_path.next() {
             let attr = self.resolve_attr(backtrace.clone(), &attr)?;
 
-            let set_value = value.borrow().get(&attr).unwrap();
+            let set_value = value.borrow().get((&*backtrace).clone(), &attr)?;
 
             let Some(set_value) = set_value else {
                 // If `value` doesn't have `attr`, then create it

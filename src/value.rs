@@ -15,7 +15,7 @@ use rnix::ast;
 
 use crate::builtins::NixBuiltin;
 use crate::scope::Scope;
-use crate::{NixBacktrace, NixResult};
+use crate::{NixBacktrace, NixError, NixResult};
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum NixLambdaParam {
@@ -253,9 +253,14 @@ impl NixValue {
         NixVar(Rc::new(RefCell::new(LazyNixValue::Concrete(self.wrap()))))
     }
 
-    pub fn get(&self, attr: &String) -> Result<Option<NixVar>, ()> {
+    pub fn get(&self, backtrace: NixBacktrace, attr: &String) -> Result<Option<NixVar>, NixError> {
         let NixValue::AttrSet(set) = self else {
-            todo!("Error handling");
+            return Err(NixError::from_backtrace(
+                backtrace,
+                crate::NixLabelKind::Error,
+                crate::NixLabelMessage::Empty,
+                "Error handling: Should be AttrSet",
+            ));
         };
 
         Ok(set.get(attr).cloned())
