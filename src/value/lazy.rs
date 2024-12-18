@@ -89,7 +89,10 @@ impl LazyNixValue {
                 let span = Rc::new(NixSpan::from_ast_node(&scope.file, &expr));
 
                 LazyNixValue::new_eval(
-                    Rc::new(NixBacktrace(span.clone(), Some(backtrace))),
+                    Rc::new(NixBacktrace(
+                        span.clone(),
+                        Some((&*backtrace).clone()).into(),
+                    )),
                     Box::new(move |backtrace| {
                         let scope = scope.new_child();
 
@@ -101,7 +104,7 @@ impl LazyNixValue {
                                 return Err(crate::NixError::todo(
                                     span,
                                     "Pattern lambda param",
-                                    Some(backtrace),
+                                    Some((&*backtrace).clone()),
                                 ))
                             }
                         };

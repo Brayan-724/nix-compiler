@@ -108,7 +108,7 @@ impl Scope {
                                                     NixLabelKind::Help,
                                                 ),
                                             ],
-                                            backtrace: Some(backtrace.clone()),
+                                            backtrace: Some((&*backtrace).clone()).into(),
                                         })?
                                         .resolve(backtrace)
                                 }),
@@ -170,7 +170,7 @@ impl Scope {
     ) -> Rc<NixBacktrace> {
         Rc::new(NixBacktrace(
             Rc::new(NixSpan::from_ast_node(&self.file, node)),
-            Some(backtrace),
+            Some((&*backtrace).clone()).into(),
         ))
     }
 
@@ -247,7 +247,7 @@ impl Scope {
                     NixLabelMessage::AssertionFailed,
                     NixLabelKind::Error,
                 )],
-                backtrace: Some(backtrace),
+                backtrace: Some((&*backtrace).clone()).into(),
             })
         }
     }
@@ -734,11 +734,15 @@ impl Scope {
 
                 Ok(NixValue::Bool(!value).wrap_var())
             }
-            ast::UnaryOpKind::Negate => Err(NixError::todo(
-                NixSpan::from_ast_node(&self.file, &node).into(),
-                "Negate op",
-                None,
-            )),
+            ast::UnaryOpKind::Negate => match value.deref() {
+                NixValue::Int(v) => Ok(NixValue::Int(-v).wrap_var()),
+                NixValue::Float(v) => Ok(NixValue::Float(-v).wrap_var()),
+                _ => Err(NixError::todo(
+                    NixSpan::from_ast_node(&self.file, &node).into(),
+                    "Error Handling: should be a number",
+                    None,
+                )),
+            },
         }
     }
 

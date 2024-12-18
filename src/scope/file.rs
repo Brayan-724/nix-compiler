@@ -46,7 +46,7 @@ impl FileScope {
 
         let backtrace = Rc::new(NixBacktrace(
             Rc::new(NixSpan::from_ast_node(&self, &root)),
-            backtrace,
+            backtrace.map(|b| (&*b).clone()).into(),
         ));
 
         let scope = Scope::new_with_builtins(self);

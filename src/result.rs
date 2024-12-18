@@ -16,11 +16,11 @@ pub type NixResult<V = NixValueWrapped> = Result<V, NixError>;
 pub struct NixError {
     pub message: String,
     pub labels: Vec<NixLabel>,
-    pub backtrace: Option<Rc<NixBacktrace>>,
+    pub backtrace: Rc<Option<NixBacktrace>>,
 }
 
 #[derive(Clone, Debug)]
-pub struct NixBacktrace(pub Rc<NixSpan>, pub Option<Rc<NixBacktrace>>);
+pub struct NixBacktrace(pub Rc<NixSpan>, pub Rc<Option<NixBacktrace>>);
 
 #[derive(Clone, Debug)]
 pub struct NixSpan {
@@ -125,7 +125,7 @@ impl fmt::Display for NixBacktrace {
                 column = self.0.start.1
             ))?;
 
-            if let Some(backtrace) = &self.1 {
+            if let Some(backtrace) = &*self.1 {
                 f.write_fmt(format_args!("\n{backtrace}"))?;
             }
 
@@ -147,7 +147,24 @@ impl NixError {
         Self {
             message: message.to_string(),
             labels: vec![label.into()],
-            backtrace: None,
+            backtrace: None.into(),
+        }
+    }
+
+    pub fn from_backtrace(
+        backtrace: NixBacktrace,
+        kind: NixLabelKind,
+        label: NixLabelMessage,
+        message: impl ToString,
+    ) -> Self {
+        let NixBacktrace(span, backtrace) = backtrace;
+
+        let label = NixLabel::new(span.clone(), label, kind);
+
+        Self {
+            message: message.to_string(),
+            labels: vec![label],
+            backtrace,
         }
     }
 
@@ -201,14 +218,14 @@ impl NixError {
         Self {
             message,
             labels,
-            backtrace: None,
+            backtrace: None.into(),
         }
     }
 
     pub fn todo(
         span: Rc<NixSpan>,
         message: impl ToString,
-        backtrace: Option<Rc<NixBacktrace>>,
+        backtrace: impl Into<Rc<Option<NixBacktrace>>>,
     ) -> Self {
         let message = message.to_string();
         let label = NixLabelMessage::Custom(message.clone());
@@ -219,7 +236,7 @@ impl NixError {
         Self {
             message,
             labels: vec![label],
-            backtrace,
+            backtrace: backtrace.into(),
         }
     }
 }
@@ -406,7 +423,7 @@ fn print_labels(
     f: &mut fmt::Formatter<'_>,
     labels: &[NixLabel],
     message: Option<&str>,
-    backtrace: Option<Rc<NixBacktrace>>,
+    backtrace: Rc<Option<NixBacktrace>>,
 ) -> fmt::Result {
     assert!(!labels.is_empty());
 
@@ -539,7 +556,7 @@ fn print_labels(
 
     f.write_char('\n')?;
 
-    if let Some(backtrace) = &backtrace {
+    if let Some(backtrace) = &*backtrace {
         if f.alternate() {
             f.write_char('\n')?;
         } else if std::env::var(BACKTRACE_ENV).is_ok() {
