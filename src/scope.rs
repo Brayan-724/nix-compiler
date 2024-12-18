@@ -34,6 +34,7 @@ impl Scope {
         let builtins = builtins::get_builtins();
 
         insert!(globals; abort = builtins::Abort::generate());
+        insert!(globals; baseNameOf = builtins::BaseNameOf::generate());
         insert!(globals; false = NixValue::Bool(false));
         insert!(globals; import = builtins::Import::generate());
         insert!(globals; map = builtins::Map::generate());

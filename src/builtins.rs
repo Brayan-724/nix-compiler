@@ -8,7 +8,7 @@ use std::rc::Rc;
 use crate::value::{NixLambda, NixList};
 use crate::{NixBacktrace, NixResult, NixValue, NixValueWrapped, NixVar};
 
-pub use r#impl::{get_builtins, Abort, Import, Map, RemoveAttrs, Throw, ToString};
+pub use r#impl::{get_builtins, Abort, BaseNameOf, Import, Map, RemoveAttrs, Throw, ToString};
 
 pub trait FromNixExpr: Sized {
     fn from_nix_expr(backtrace: Rc<NixBacktrace>, var: NixVar) -> NixResult<Self>;

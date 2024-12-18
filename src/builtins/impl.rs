@@ -73,9 +73,21 @@ pub fn attr_names(set: NixValueWrapped) {
 #[builtin]
 pub fn base_name_of(s: NixValueWrapped) {
     let s = s.borrow();
-    let Some(s) = s.as_path() else {
-        todo!("Error Handling: baseNameOf cannot convert into path");
+
+    let s = if let Some(s) = s.as_string() {
+        if s.ends_with("/") {
+            PathBuf::from(&s[..s.len() - 1])
+        } else {
+            PathBuf::from(s)
+        }
+    } else {
+        let Some(s) = s.as_path() else {
+            todo!("Error Handling: baseNameOf cannot convert into path");
+        };
+
+        s
     };
+
     let Some(s) = s.file_name() else {
         todo!("Error Handling: baseNameOf get file_name/baseNameOf");
     };

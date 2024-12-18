@@ -318,6 +318,13 @@ impl NixValue {
         }
     }
 
+    pub fn as_string(&self) -> Option<&String> {
+        match self {
+            NixValue::String(string) => Some(string),
+            _ => None,
+        }
+    }
+
     pub fn as_type(&self) -> &'static str {
         match self {
             NixValue::AttrSet(_) => "set",
