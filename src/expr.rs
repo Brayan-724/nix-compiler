@@ -337,11 +337,23 @@ impl Scope {
                     None,
                 )),
             },
-            ast::BinOpKind::Sub => Err(NixError::todo(
-                NixSpan::from_ast_node(&self.file, &node).into(),
-                "Sub op",
-                None,
-            )),
+            ast::BinOpKind::Sub => match lhs.borrow().deref() {
+                NixValue::Int(lhs) => self
+                    .visit_expr(backtrace.clone(), node.rhs().unwrap())?
+                    .resolve(backtrace)?
+                    .borrow()
+                    .as_int()
+                    .ok_or_else(|| todo!("Error handling: Int cast"))
+                    .map(|rhs| *lhs - rhs)
+                    .map(NixValue::Int)
+                    .map(NixValue::wrap_var),
+                _ => Err(NixError::todo(
+                    NixSpan::from_ast_node(&self.file, &node).into(),
+                    "Cannot sub",
+                    None,
+                )),
+            },
+
             ast::BinOpKind::Mul => Err(NixError::todo(
                 NixSpan::from_ast_node(&self.file, &node).into(),
                 "Mul op",
