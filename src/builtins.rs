@@ -83,7 +83,7 @@ impl FromNixExpr for String {
     fn from_nix_expr(backtrace: Rc<NixBacktrace>, var: NixVar) -> NixResult<Self> {
         var.resolve(backtrace)?
             .borrow()
-            .as_string()
+            .cast_to_string()
             .ok_or_else(|| todo!("Error handling: String cast"))
     }
 }

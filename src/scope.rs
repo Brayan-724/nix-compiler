@@ -205,12 +205,12 @@ impl Scope {
                 .visit_expr(backtrace.clone(), dynamic.expr().unwrap())?
                 .resolve(backtrace)?
                 .borrow()
-                .as_string()
+                .cast_to_string()
                 .expect("Cannot cast as string")),
             ast::Attr::Str(str) => self
                 .visit_str(backtrace.clone(), str.clone())
                 // visit_str always returns a string concrete
-                .map(|v| v.as_concrete().unwrap().borrow().as_string().unwrap()),
+                .map(|v| v.as_concrete().unwrap().borrow().cast_to_string().unwrap()),
         }
     }
 }

@@ -333,7 +333,7 @@ impl Scope {
                     .visit_expr(backtrace.clone(), node.rhs().unwrap())?
                     .resolve(backtrace)?
                     .borrow()
-                    .as_string()
+                    .cast_to_string()
                     .ok_or_else(|| todo!("Error handling"))
                     .map(|rhs| NixValue::String(format!("{lhs}{rhs}")).wrap_var()),
                 _ => Err(NixError::todo(
@@ -658,7 +658,7 @@ impl Scope {
                         .visit_expr(backtrace.clone(), interpol.expr().unwrap())?
                         .resolve(backtrace.clone())?
                         .borrow()
-                        .as_string()
+                        .cast_to_string()
                         .unwrap();
 
                     if idx == 1 && path.get(0..1) == Some("/") && str.get(0..1) == Some("/") {
@@ -716,7 +716,7 @@ impl Scope {
                         .visit_expr(backtrace.clone(), interpol.expr().unwrap())?
                         .resolve(backtrace.clone())?
                         .borrow()
-                        .as_string()
+                        .cast_to_string()
                         .unwrap();
                 }
             }

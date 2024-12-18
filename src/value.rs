@@ -365,11 +365,11 @@ impl NixValue {
     }
 
     pub fn can_cast_string(&self) -> bool {
-        self.as_string().is_some()
+        self.cast_to_string().is_some()
     }
 
     // https://nix.dev/manual/nix/2.24/language/builtins.html?highlight=abort#builtins-toString
-    pub fn as_string(&self) -> Option<String> {
+    pub fn cast_to_string(&self) -> Option<String> {
         // TODO: AttrSet to String
         match self {
             NixValue::AttrSet(_) => todo!(),

@@ -146,7 +146,7 @@ pub fn concat_string_sep(backtrace: Rc<NixBacktrace>, sep: String, list: NixList
         .iter()
         .map(|i| {
             i.borrow()
-                .as_string()
+                .cast_to_string()
                 .ok_or_else(|| todo!("Error Handling"))
         })
         .collect::<NixResult<Vec<_>>>()?;
@@ -267,7 +267,7 @@ pub fn import(backtrace: Rc<NixBacktrace>, argument: NixValueWrapped) {
             let is_flake = if let Some(ty) = set.get("_type") {
                 ty.resolve(backtrace.clone())?
                     .borrow()
-                    .as_string()
+                    .cast_to_string()
                     .eq(&Some("flake".to_owned()))
             } else {
                 false
@@ -517,7 +517,7 @@ pub fn replace_strings(
 
     for item in from.0.iter() {
         let resolved = item.resolve(backtrace.clone())?;
-        let Some(search) = resolved.borrow().as_string() else {
+        let Some(search) = resolved.borrow().cast_to_string() else {
             todo!("Expected string in `from`");
         };
         from_vec.push(search.clone());
@@ -534,7 +534,7 @@ pub fn replace_strings(
             if s_chars[p..].iter().collect::<String>().starts_with(search) {
                 let replace = to.0.get(i).unwrap();
                 let resolved_replace = replace.resolve(backtrace.clone())?;
-                let Some(replace_str) = resolved_replace.borrow().as_string() else {
+                let Some(replace_str) = resolved_replace.borrow().cast_to_string() else {
                     todo!("Expected string in `to`");
                 };
 
@@ -579,7 +579,7 @@ pub fn remove_attrs(backtrace: Rc<NixBacktrace>, attrset: NixValueWrapped, attrs
         .iter()
         .map(|attr| {
             attr.resolve(backtrace.clone())
-                .map(|attr| attr.borrow().as_string().unwrap())
+                .map(|attr| attr.borrow().cast_to_string().unwrap())
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -640,7 +640,7 @@ pub fn split(regex: String, content: String) {
 
 #[builtin]
 pub fn string_length(argument: NixValueWrapped) {
-    Ok(NixValue::Int(argument.borrow().as_string().unwrap().len() as i64).wrap())
+    Ok(NixValue::Int(argument.borrow().cast_to_string().unwrap().len() as i64).wrap())
 }
 
 #[builtin()]
