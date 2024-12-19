@@ -405,11 +405,20 @@ impl Scope {
                     None,
                 )),
             },
-            ast::BinOpKind::LessOrEq => Err(NixError::todo(
-                NixSpan::from_ast_node(&self.file, &node).into(),
-                "LessOrEq op",
-                None,
-            )),
+            ast::BinOpKind::LessOrEq => match lhs.borrow().deref() {
+                NixValue::Int(lhs) => self
+                    .visit_expr(backtrace.clone(), node.rhs().unwrap())?
+                    .resolve(backtrace)?
+                    .borrow()
+                    .as_int()
+                    .ok_or_else(|| todo!("Error handling"))
+                    .map(|rhs| NixValue::Bool(*lhs <= rhs).wrap_var()),
+                _ => Err(NixError::todo(
+                    NixSpan::from_ast_node(&self.file, &node).into(),
+                    "Cannot LessOrEq",
+                    None,
+                )),
+            },
             ast::BinOpKind::More => Err(NixError::todo(
                 NixSpan::from_ast_node(&self.file, &node).into(),
                 "More op",
