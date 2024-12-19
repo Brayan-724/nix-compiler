@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use crate::{NixBacktrace, NixResult};
 
-use super::{LazyNixValue, NixValue, NixValueWrapped};
+use super::{LazyNixValue, NixValueWrapped};
 
 #[derive(Clone)]
 pub struct NixVar(pub Rc<RefCell<LazyNixValue>>);
@@ -31,7 +31,7 @@ impl PartialEq for NixVar {
 impl Eq for NixVar {}
 
 impl NixVar {
-    pub fn try_eq(&self, rhs: &Self, backtrace: Rc<NixBacktrace>) -> NixResult<bool> {
+    pub fn try_eq(&self, rhs: &Self, backtrace: &NixBacktrace) -> NixResult<bool> {
         LazyNixValue::try_eq(&self.0, &rhs.0, backtrace)
     }
 
@@ -39,29 +39,29 @@ impl NixVar {
         self.0.borrow().as_concrete()
     }
 
-    pub fn resolve(&self, backtrace: Rc<NixBacktrace>) -> NixResult {
+    pub fn resolve(&self, backtrace: &NixBacktrace) -> NixResult {
         if let LazyNixValue::Concrete(value) = &*self.0.borrow() {
             return Ok(value.clone());
         }
 
-        let mut out_value = LazyNixValue::resolve(&self.0, backtrace.clone())?;
+        let mut out_value = LazyNixValue::resolve(&self.0, backtrace)?;
 
         while matches!(&*self.0.borrow(), LazyNixValue::UpdateResolve { .. }) {
-            out_value = LazyNixValue::resolve(&self.0, backtrace.clone())?;
+            out_value = LazyNixValue::resolve(&self.0, backtrace)?;
         }
 
         Ok(out_value)
     }
 
-    pub fn resolve_set(&self, recursive: bool, backtrace: Rc<NixBacktrace>) -> NixResult {
+    pub fn resolve_set(&self, recursive: bool, backtrace: &NixBacktrace) -> NixResult {
         LazyNixValue::resolve_set(&self.0, recursive, backtrace)
     }
 
-    pub fn resolve_map<T>(
-        &self,
-        backtrace: Rc<NixBacktrace>,
-        f: impl FnOnce(&NixValue) -> T,
-    ) -> NixResult<T> {
-        Ok(f(self.resolve(backtrace)?.borrow().deref()))
-    }
+    // pub fn resolve_map<T>(
+    //     &self,
+    //     backtrace: Rc<NixBacktrace>,
+    //     f: impl FnOnce(&NixValue) -> T,
+    // ) -> NixResult<T> {
+    //     Ok(f(self.resolve(backtrace)?.borrow().deref()))
+    // }
 }

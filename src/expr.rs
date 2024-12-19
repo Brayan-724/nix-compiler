@@ -14,7 +14,7 @@ use crate::{
 impl Scope {
     fn insert_to_attrset(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         out: NixValueWrapped,
         attrpath: ast::Attrpath,
         attr_value: ast::Expr,
@@ -25,16 +25,16 @@ impl Scope {
             .expect("Attrpath requires at least one attribute");
 
         let target =
-            self.resolve_attr_set_path(backtrace.clone(), out.clone(), attr_path.into_iter())??;
+            self.resolve_attr_set_path(backtrace, out.clone(), attr_path.into_iter())??;
 
         if !target.borrow().is_attr_set() {
             todo!("Error handling")
         };
 
-        let attr = self.resolve_attr(backtrace.clone(), &last_attr_path)?;
+        let attr = self.resolve_attr(backtrace, &last_attr_path)?;
 
         let child = LazyNixValue::Pending(
-            self.new_backtrace(backtrace.clone(), &attr_value),
+            self.new_backtrace(backtrace, &attr_value),
             self.clone().new_child(),
             attr_value,
         )
@@ -50,7 +50,7 @@ impl Scope {
 
     fn insert_entry_to_attrset(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         out: NixValueWrapped,
         entry: ast::Entry,
     ) -> NixResult {
@@ -59,7 +59,7 @@ impl Scope {
                 let from = entry.from().map(|from| {
                     (
                         LazyNixValue::Pending(
-                            self.new_backtrace(backtrace.clone(), &from),
+                            self.new_backtrace(backtrace, &from),
                             self.clone(),
                             from.expr().unwrap(),
                         )
@@ -69,7 +69,7 @@ impl Scope {
                 });
 
                 for attr_node in entry.attrs() {
-                    let attr = self.resolve_attr(backtrace.clone(), &attr_node)?;
+                    let attr = self.resolve_attr(backtrace, &attr_node)?;
 
                     if let Some((from, from_expr)) = &from {
                         let value = {
@@ -80,9 +80,9 @@ impl Scope {
                             let file = self.file.clone();
 
                             LazyNixValue::new_eval(
-                                self.new_backtrace(backtrace.clone(), &from_expr),
+                                self.new_backtrace(backtrace, &from_expr),
                                 Box::new(move |backtrace| {
-                                    from.resolve(backtrace.clone())?
+                                    from.resolve(backtrace)?
                                         .borrow()
                                         .as_attr_set()
                                         .unwrap()
@@ -108,7 +108,7 @@ impl Scope {
                                                     NixLabelKind::Help,
                                                 ),
                                             ],
-                                            backtrace: Some((&*backtrace).clone()).into(),
+                                            backtrace: Some(backtrace.clone()).into(),
                                         })?
                                         .resolve(backtrace)
                                 }),
@@ -127,7 +127,7 @@ impl Scope {
                             let file = self.file.clone();
 
                             LazyNixValue::new_eval(
-                                self.new_backtrace(backtrace.clone(), &attr_node),
+                                self.new_backtrace(backtrace, &attr_node),
                                 Box::new(move |backtrace| {
                                     let Some(value) = scope.get_variable(attr.clone()) else {
                                         return Err(NixError::from_message(
@@ -165,18 +165,18 @@ impl Scope {
 
     fn new_backtrace(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         node: &impl AstNode,
-    ) -> Rc<NixBacktrace> {
-        Rc::new(NixBacktrace(
+    ) -> NixBacktrace {
+        NixBacktrace(
             Rc::new(NixSpan::from_ast_node(&self.file, node)),
-            Some((&*backtrace).clone()).into(),
-        ))
+            Some(backtrace.clone()).into(),
+        )
     }
 
     pub fn visit_expr(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         node: ast::Expr,
     ) -> NixResult<NixVar> {
         match node {
@@ -205,36 +205,36 @@ impl Scope {
 
     pub fn visit_apply(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         node: ast::Apply,
     ) -> NixResult<NixVar> {
-        let backtrace = Rc::new(NixBacktrace(
+        let backtrace = &NixBacktrace(
             NixSpan::from_ast_node(&self.file, &node).into(),
-            Some((&*backtrace).clone()).into(),
-        ));
+            Some(backtrace.clone()).into(),
+        );
 
         self.visit_expr(
-            self.new_backtrace(backtrace.clone(), &node),
+            &self.new_backtrace(backtrace, &node),
             node.lambda().unwrap(),
         )?
-        .resolve(backtrace.clone())?
+        .resolve(backtrace)?
         .borrow()
         .as_lambda()
         .ok_or_else(|| todo!("Error handling: Lambda cast"))
         .and_then(|l| {
-            let argument = self.visit_expr(backtrace.clone(), node.argument().unwrap())?;
+            let argument = self.visit_expr(backtrace, node.argument().unwrap())?;
             l.call(backtrace, argument)
         })
     }
 
     pub fn visit_assert(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         node: ast::Assert,
     ) -> NixResult<NixVar> {
         let condition = self
-            .visit_expr(backtrace.clone(), node.condition().unwrap())?
-            .resolve(backtrace.clone())?;
+            .visit_expr(backtrace, node.condition().unwrap())?
+            .resolve(backtrace)?;
         let Some(condition) = condition.borrow().as_bool() else {
             todo!("Error handling")
         };
@@ -242,7 +242,7 @@ impl Scope {
         if condition {
             node.body().map_or_else(
                 || Ok(NixValue::Null.wrap_var()),
-                |expr| self.visit_expr(backtrace.clone(), expr),
+                |expr| self.visit_expr(backtrace, expr),
             )
         } else {
             Err(NixError {
@@ -252,14 +252,14 @@ impl Scope {
                     NixLabelMessage::AssertionFailed,
                     NixLabelKind::Error,
                 )],
-                backtrace: Some((&*backtrace).clone()).into(),
+                backtrace: Some(backtrace.clone()).into(),
             })
         }
     }
 
     pub fn visit_attrset(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         node: ast::AttrSet,
     ) -> NixResult<NixVar> {
         let is_recursive = node.rec_token().is_some();
@@ -268,7 +268,7 @@ impl Scope {
             let scope = self.clone().new_child();
 
             for entry in node.entries() {
-                scope.insert_entry_to_attrset(backtrace.clone(), scope.variables.clone(), entry)?;
+                scope.insert_entry_to_attrset(backtrace, scope.variables.clone(), entry)?;
             }
 
             Ok(LazyNixValue::Concrete(scope.variables.clone()).wrap_var())
@@ -276,7 +276,7 @@ impl Scope {
             let out = NixValue::AttrSet(NixAttrSet::new()).wrap();
 
             for entry in node.entries() {
-                self.insert_entry_to_attrset(backtrace.clone(), out.clone(), entry)?;
+                self.insert_entry_to_attrset(backtrace, out.clone(), entry)?;
             }
 
             Ok(LazyNixValue::Concrete(out).wrap_var())
@@ -285,12 +285,12 @@ impl Scope {
 
     pub fn visit_binop(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         node: ast::BinOp,
     ) -> NixResult<NixVar> {
         let lhs = self
-            .visit_expr(backtrace.clone(), node.lhs().unwrap())?
-            .resolve(backtrace.clone())?;
+            .visit_expr(backtrace, node.lhs().unwrap())?
+            .resolve(backtrace)?;
 
         match node.operator().unwrap() {
             ast::BinOpKind::Concat => lhs
@@ -299,7 +299,7 @@ impl Scope {
                 .ok_or_else(|| todo!("Error handling"))
                 .and_then(|ref lhs| {
                     let rhs = self
-                        .visit_expr(backtrace.clone(), node.rhs().unwrap())
+                        .visit_expr(backtrace, node.rhs().unwrap())
                         .and_then(|rhs| rhs.resolve(backtrace))
                         .and_then(|rhs| {
                             rhs.borrow()
@@ -323,14 +323,14 @@ impl Scope {
                 Ok(LazyNixValue::UpdateResolve {
                     lhs,
                     rhs: node.rhs().unwrap(),
-                    backtrace,
+                    backtrace: backtrace.clone(),
                     scope: self.clone(),
                 }
                 .wrap_var())
             }
             ast::BinOpKind::Add => match lhs.borrow().deref() {
                 NixValue::String(lhs) => self
-                    .visit_expr(backtrace.clone(), node.rhs().unwrap())?
+                    .visit_expr(backtrace, node.rhs().unwrap())?
                     .resolve(backtrace)?
                     .borrow()
                     .cast_to_string()
@@ -344,7 +344,7 @@ impl Scope {
             },
             ast::BinOpKind::Sub => match lhs.borrow().deref() {
                 NixValue::Int(lhs) => self
-                    .visit_expr(backtrace.clone(), node.rhs().unwrap())?
+                    .visit_expr(backtrace, node.rhs().unwrap())?
                     .resolve(backtrace)?
                     .borrow()
                     .as_int()
@@ -378,8 +378,8 @@ impl Scope {
                         .unwrap_or_else(|| Ok(NixValue::Bool(false).wrap_var()))
                 }),
             ast::BinOpKind::Equal => self
-                .visit_expr(backtrace.clone(), node.rhs().unwrap())
-                .and_then(|rhs| rhs.resolve(backtrace.clone()))
+                .visit_expr(backtrace, node.rhs().unwrap())
+                .and_then(|rhs| rhs.resolve(backtrace))
                 .and_then(|rhs| rhs.borrow().deref().try_eq(&*lhs.borrow(), backtrace))
                 .map(NixValue::Bool)
                 .map(NixValue::wrap_var),
@@ -393,7 +393,7 @@ impl Scope {
                 }),
             ast::BinOpKind::Less => match lhs.borrow().deref() {
                 NixValue::Int(lhs) => self
-                    .visit_expr(backtrace.clone(), node.rhs().unwrap())?
+                    .visit_expr(backtrace, node.rhs().unwrap())?
                     .resolve(backtrace)?
                     .borrow()
                     .as_int()
@@ -407,7 +407,7 @@ impl Scope {
             },
             ast::BinOpKind::LessOrEq => match lhs.borrow().deref() {
                 NixValue::Int(lhs) => self
-                    .visit_expr(backtrace.clone(), node.rhs().unwrap())?
+                    .visit_expr(backtrace, node.rhs().unwrap())?
                     .resolve(backtrace)?
                     .borrow()
                     .as_int()
@@ -430,8 +430,8 @@ impl Scope {
                 None,
             )),
             ast::BinOpKind::NotEqual => self
-                .visit_expr(backtrace.clone(), node.rhs().unwrap())
-                .and_then(|rhs| rhs.resolve(backtrace.clone()))
+                .visit_expr(backtrace, node.rhs().unwrap())
+                .and_then(|rhs| rhs.resolve(backtrace))
                 .and_then(|rhs| rhs.borrow().deref().try_eq(&*lhs.borrow(), backtrace))
                 .map(std::ops::Not::not)
                 .map(NixValue::Bool)
@@ -450,7 +450,7 @@ impl Scope {
 
     pub fn visit_error(
         self: &Rc<Self>,
-        _backtrace: Rc<NixBacktrace>,
+        _backtrace: &NixBacktrace,
         node: ast::Error,
     ) -> NixResult<NixVar> {
         Err(NixError::todo(
@@ -462,20 +462,20 @@ impl Scope {
 
     pub fn visit_hasattr(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         node: ast::HasAttr,
     ) -> NixResult<NixVar> {
-        let backtrace = Rc::new(NixBacktrace(
+        let backtrace = &NixBacktrace(
             NixSpan::from_ast_node(&self.file, &node).into(),
             Some((&*backtrace).clone()).into(),
-        ));
+        );
 
         let value = self
-            .visit_expr(backtrace.clone(), node.expr().unwrap())?
-            .resolve(backtrace.clone())?;
+            .visit_expr(backtrace, node.expr().unwrap())?
+            .resolve(backtrace)?;
 
         let has_attr = self
-            .resolve_attr_path(backtrace.clone(), value, node.attrpath().unwrap())?
+            .resolve_attr_path(backtrace, value, node.attrpath().unwrap())?
             .is_ok();
 
         Ok(NixValue::Bool(has_attr).wrap_var())
@@ -483,7 +483,7 @@ impl Scope {
 
     pub fn visit_ident(
         self: &Rc<Self>,
-        _backtrace: Rc<NixBacktrace>,
+        _backtrace: &NixBacktrace,
         node: ast::Ident,
     ) -> NixResult<NixVar> {
         let node = node.ident_token().unwrap();
@@ -503,12 +503,12 @@ impl Scope {
 
     pub fn visit_ifelse(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         node: ast::IfElse,
     ) -> NixResult<NixVar> {
         let condition = self
-            .visit_expr(backtrace.clone(), node.condition().unwrap())?
-            .resolve(backtrace.clone())?;
+            .visit_expr(backtrace, node.condition().unwrap())?
+            .resolve(backtrace)?;
 
         let Some(condition) = condition.borrow().as_bool() else {
             todo!("Error handling")
@@ -523,7 +523,7 @@ impl Scope {
 
     pub fn visit_lambda(
         self: &Rc<Self>,
-        _backtrace: Rc<NixBacktrace>,
+        _backtrace: &NixBacktrace,
         node: ast::Lambda,
     ) -> NixResult<NixVar> {
         let param = match node.param().unwrap() {
@@ -545,22 +545,18 @@ impl Scope {
         )
     }
 
-    pub fn visit_legacylet(
-        self: &Rc<Self>,
-        _backtrace: Rc<NixBacktrace>,
-        _node: ast::LegacyLet,
-    ) -> ! {
+    pub fn visit_legacylet(self: &Rc<Self>, _backtrace: &NixBacktrace, _node: ast::LegacyLet) -> ! {
         unimplemented!("This is legacy")
     }
 
     pub fn visit_letin(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         node: ast::LetIn,
     ) -> NixResult<NixVar> {
         for entry in node.entries() {
             self.insert_entry_to_attrset(
-                self.new_backtrace(backtrace.clone(), &entry),
+                &self.new_backtrace(backtrace, &entry),
                 self.variables.clone(),
                 entry,
             )?;
@@ -570,23 +566,19 @@ impl Scope {
 
         self.clone()
             .new_child()
-            .visit_expr(self.new_backtrace(backtrace, &body), body)
+            .visit_expr(&self.new_backtrace(backtrace, &body), body)
     }
 
     pub fn visit_list(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         node: ast::List,
     ) -> NixResult<NixVar> {
         Ok(NixValue::List(NixList(Rc::new(
             node.items()
                 .map(|expr| {
-                    LazyNixValue::Pending(
-                        self.new_backtrace(backtrace.clone(), &expr),
-                        self.clone(),
-                        expr,
-                    )
-                    .wrap_var()
+                    LazyNixValue::Pending(self.new_backtrace(backtrace, &expr), self.clone(), expr)
+                        .wrap_var()
                 })
                 .collect(),
         )))
@@ -595,7 +587,7 @@ impl Scope {
 
     pub fn visit_literal(
         self: &Rc<Self>,
-        _backtrace: Rc<NixBacktrace>,
+        _backtrace: &NixBacktrace,
         node: ast::Literal,
     ) -> NixResult<NixVar> {
         match node.kind() {
@@ -615,7 +607,7 @@ impl Scope {
 
     pub fn visit_paren(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         node: ast::Paren,
     ) -> NixResult<NixVar> {
         self.visit_expr(backtrace, node.expr().unwrap())
@@ -623,7 +615,7 @@ impl Scope {
 
     pub fn visit_path(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         node: ast::Path,
     ) -> NixResult<NixVar> {
         let mut path = String::new();
@@ -664,8 +656,8 @@ impl Scope {
                 }
                 ast::InterpolPart::Interpolation(interpol) => {
                     let str = self
-                        .visit_expr(backtrace.clone(), interpol.expr().unwrap())?
-                        .resolve(backtrace.clone())?
+                        .visit_expr(backtrace, interpol.expr().unwrap())?
+                        .resolve(backtrace)?
                         .borrow()
                         .cast_to_string()
                         .unwrap();
@@ -684,7 +676,7 @@ impl Scope {
 
     pub fn visit_root(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         node: ast::Root,
     ) -> NixResult<NixVar> {
         self.visit_expr(backtrace, node.expr().unwrap())
@@ -692,14 +684,14 @@ impl Scope {
 
     pub fn visit_select(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         node: ast::Select,
     ) -> NixResult<NixVar> {
         let var = self
-            .visit_expr(backtrace.clone(), node.expr().unwrap())?
-            .resolve(backtrace.clone())?;
+            .visit_expr(backtrace, node.expr().unwrap())?
+            .resolve(backtrace)?;
 
-        let var = self.resolve_attr_path(backtrace.clone(), var, node.attrpath().unwrap())?;
+        let var = self.resolve_attr_path(backtrace, var, node.attrpath().unwrap())?;
 
         if var.is_err() && node.default_expr().is_some() {
             self.visit_expr(backtrace, node.default_expr().unwrap())
@@ -710,7 +702,7 @@ impl Scope {
 
     pub fn visit_str(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         node: ast::Str,
     ) -> NixResult<NixVar> {
         let mut content = String::new();
@@ -722,8 +714,8 @@ impl Scope {
                 }
                 ast::InterpolPart::Interpolation(interpol) => {
                     content += &self
-                        .visit_expr(backtrace.clone(), interpol.expr().unwrap())?
-                        .resolve(backtrace.clone())?
+                        .visit_expr(backtrace, interpol.expr().unwrap())?
+                        .resolve(backtrace)?
                         .borrow()
                         .cast_to_string()
                         .unwrap();
@@ -736,11 +728,11 @@ impl Scope {
 
     pub fn visit_unaryop(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         node: ast::UnaryOp,
     ) -> NixResult<NixVar> {
         let value = self
-            .visit_expr(backtrace.clone(), node.expr().unwrap())?
+            .visit_expr(backtrace, node.expr().unwrap())?
             .resolve(backtrace)?;
         let value = value.borrow();
 
@@ -766,12 +758,12 @@ impl Scope {
 
     pub fn visit_with(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         node: ast::With,
     ) -> NixResult<NixVar> {
         let namespace = self
-            .visit_expr(backtrace.clone(), node.namespace().unwrap())?
-            .resolve(backtrace.clone())?;
+            .visit_expr(backtrace, node.namespace().unwrap())?
+            .resolve(backtrace)?;
 
         if !namespace.borrow().is_attr_set() {
             todo!("Error handling")

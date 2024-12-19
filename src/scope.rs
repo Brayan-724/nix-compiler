@@ -16,7 +16,7 @@ use crate::{
 
 #[derive(Debug)]
 pub struct Scope {
-    pub backtrace: Option<Rc<NixBacktrace>>,
+    pub backtrace: Option<NixBacktrace>,
     pub file: Rc<FileScope>,
     pub variables: NixValueWrapped,
     pub parent: Option<Rc<Scope>>,
@@ -100,15 +100,16 @@ impl Scope {
             })
     }
 
-    pub fn import_path(backtrace: Rc<NixBacktrace>, path: impl AsRef<Path>) -> NixResult {
+    pub fn import_path(backtrace: &NixBacktrace, path: impl AsRef<Path>) -> NixResult {
         let path = path.as_ref();
 
         println!("Importing {path:#?}");
 
-        let (_, backtrace, result) = FileScope::from_path(path).evaluate(Some(backtrace))?;
+        let (_, backtrace, result) =
+            FileScope::from_path(path).evaluate(Some(backtrace.clone()))?;
 
         if path.file_name() == Some(OsStr::new("flake.nix")) {
-            flake::resolve_flake(backtrace, result)
+            flake::resolve_flake(&backtrace, result)
         } else {
             Ok(result)
         }
@@ -117,21 +118,21 @@ impl Scope {
     /// The first Result is fair, the second is the VariableNotFound error
     pub fn resolve_attr_path<'a>(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         value: NixValueWrapped,
         attr_path: ast::Attrpath,
     ) -> NixResult<NixResult<NixVar>> {
         let mut attrs: Vec<_> = attr_path.attrs().collect();
         let last_attr = attrs.pop().unwrap();
 
-        let attr_set = self.resolve_attr_set_path(backtrace.clone(), value, attrs.into_iter())?;
+        let attr_set = self.resolve_attr_set_path(backtrace, value, attrs.into_iter())?;
 
         let attr_set = match attr_set {
             Ok(ok) => ok,
             Err(e) => return Ok(Err(e)),
         };
 
-        let attr = self.resolve_attr(backtrace.clone(), &last_attr)?;
+        let attr = self.resolve_attr(backtrace, &last_attr)?;
 
         let attr_set = attr_set.borrow();
 
@@ -156,12 +157,12 @@ impl Scope {
 
     pub fn resolve_attr_set_path<'a>(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         value: NixValueWrapped,
         mut attr_path: impl Iterator<Item = ast::Attr>,
     ) -> NixResult<NixResult<NixValueWrapped>> {
         if let Some(attr) = attr_path.next() {
-            let attr = self.resolve_attr(backtrace.clone(), &attr)?;
+            let attr = self.resolve_attr(backtrace, &attr)?;
 
             let set_value = match value.borrow().get((&*backtrace).clone(), &attr) {
                 Ok(v) => v,
@@ -176,14 +177,10 @@ impl Scope {
                     .insert(attr, NixValue::AttrSet(NixAttrSet::new()).wrap_var())
                     .unwrap();
 
-                return self.resolve_attr_set_path(
-                    backtrace.clone(),
-                    last.resolve(backtrace)?,
-                    attr_path,
-                );
+                return self.resolve_attr_set_path(backtrace, last.resolve(backtrace)?, attr_path);
             };
 
-            let set_value = set_value.resolve(backtrace.clone())?;
+            let set_value = set_value.resolve(backtrace)?;
 
             if !set_value.borrow().is_attr_set() {
                 todo!("Error handling for {:#}", set_value.borrow());
@@ -197,19 +194,19 @@ impl Scope {
 
     pub fn resolve_attr(
         self: &Rc<Self>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
         attr: &ast::Attr,
     ) -> NixResult<String> {
         match attr {
             ast::Attr::Ident(ident) => Ok(ident.ident_token().unwrap().text().to_owned()),
             ast::Attr::Dynamic(dynamic) => Ok(self
-                .visit_expr(backtrace.clone(), dynamic.expr().unwrap())?
+                .visit_expr(backtrace, dynamic.expr().unwrap())?
                 .resolve(backtrace)?
                 .borrow()
                 .cast_to_string()
                 .expect("Cannot cast as string")),
             ast::Attr::Str(str) => self
-                .visit_str(backtrace.clone(), str.clone())
+                .visit_str(backtrace, str.clone())
                 // visit_str always returns a string concrete
                 .map(|v| v.as_concrete().unwrap().borrow().cast_to_string().unwrap()),
         }

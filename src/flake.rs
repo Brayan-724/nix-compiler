@@ -1,9 +1,7 @@
-use std::rc::Rc;
-
 use crate::result::NixBacktrace;
 use crate::{LazyNixValue, NixAttrSet, NixResult, NixValue, NixValueWrapped, Scope};
 
-pub fn resolve_flake(backtrace: Rc<NixBacktrace>, result: NixValueWrapped) -> NixResult {
+pub fn resolve_flake(backtrace: &NixBacktrace, result: NixValueWrapped) -> NixResult {
     let result = result.borrow();
 
     let Some(flake) = result.as_attr_set() else {
@@ -15,7 +13,7 @@ pub fn resolve_flake(backtrace: Rc<NixBacktrace>, result: NixValueWrapped) -> Ni
         .cloned()
         .unwrap_or_else(|| NixValue::AttrSet(NixAttrSet::new()).wrap_var());
 
-    let inputs = inputs.resolve(backtrace.clone())?;
+    let inputs = inputs.resolve(backtrace)?;
     let inputs = inputs.borrow();
 
     let Some(inputs) = inputs.as_attr_set() else {
@@ -23,7 +21,7 @@ pub fn resolve_flake(backtrace: Rc<NixBacktrace>, result: NixValueWrapped) -> Ni
     };
 
     let inputs = inputs.iter().map::<NixResult<_>, _>(|(key, var)| {
-        let var = var.resolve(backtrace.clone())?;
+        let var = var.resolve(backtrace)?;
         let var = var.borrow();
 
         let Some(var) = var.as_attr_set() else {
@@ -33,14 +31,14 @@ pub fn resolve_flake(backtrace: Rc<NixBacktrace>, result: NixValueWrapped) -> Ni
         let path = var
             .get("path")
             .expect("TODO: Cloning repos")
-            .resolve(backtrace.clone())?
+            .resolve(backtrace)?
             .borrow()
             .as_path()
             .unwrap_or_else(|| todo!("Eror handling"));
 
         let flake_path = path.join("flake.nix");
 
-        let flake = Scope::import_path(backtrace.clone(), flake_path)?;
+        let flake = Scope::import_path(backtrace, flake_path)?;
 
         let mut out = NixAttrSet::new();
 
@@ -60,7 +58,7 @@ pub fn resolve_flake(backtrace: Rc<NixBacktrace>, result: NixValueWrapped) -> Ni
 
     let outputs_var = flake.get("outputs").expect("Flake should export `outputs`");
 
-    let outputs = outputs_var.resolve(backtrace.clone())?;
+    let outputs = outputs_var.resolve(backtrace)?;
     let outputs = outputs.borrow();
 
     let Some(lambda) = outputs.as_lambda() else {
@@ -84,6 +82,6 @@ pub fn resolve_flake(backtrace: Rc<NixBacktrace>, result: NixValueWrapped) -> Ni
     }
 
     lambda
-        .call(backtrace.clone(), NixValue::AttrSet(value).wrap_var())?
+        .call(backtrace, NixValue::AttrSet(value).wrap_var())?
         .resolve(backtrace)
 }

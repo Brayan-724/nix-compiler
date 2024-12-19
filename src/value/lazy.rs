@@ -15,20 +15,20 @@ use super::{NixAttrSet, NixLambda, NixValue};
 #[derive(Clone)]
 pub enum LazyNixValue {
     Concrete(NixValueWrapped),
-    Pending(Rc<NixBacktrace>, Rc<Scope>, ast::Expr),
+    Pending(NixBacktrace, Rc<Scope>, ast::Expr),
     Eval(
-        Rc<NixBacktrace>,
-        Rc<RefCell<Option<Box<dyn FnOnce(Rc<NixBacktrace>) -> NixResult>>>>,
+        NixBacktrace,
+        Rc<RefCell<Option<Box<dyn FnOnce(&NixBacktrace) -> NixResult>>>>,
     ),
     /// Partial resolve for update operator (`<expr> // <expr>`)
     UpdateResolve {
         lhs: NixValueWrapped,
         rhs: ast::Expr,
 
-        backtrace: Rc<NixBacktrace>,
+        backtrace: NixBacktrace,
         scope: Rc<Scope>,
     },
-    Resolving(Rc<NixBacktrace>),
+    Resolving(NixBacktrace),
 }
 
 impl fmt::Debug for LazyNixValue {
@@ -59,10 +59,10 @@ impl LazyNixValue {
     pub fn try_eq(
         lhs: &Rc<RefCell<Self>>,
         rhs: &Rc<RefCell<Self>>,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
     ) -> NixResult<bool> {
-        let lhs = LazyNixValue::resolve(lhs, backtrace.clone())?;
-        let rhs = LazyNixValue::resolve(rhs, backtrace.clone())?;
+        let lhs = LazyNixValue::resolve(lhs, &backtrace)?;
+        let rhs = LazyNixValue::resolve(rhs, &backtrace)?;
 
         let lhs = lhs.borrow();
         let rhs = rhs.borrow();
@@ -73,26 +73,19 @@ impl LazyNixValue {
 
 impl LazyNixValue {
     pub fn new_eval(
-        backtrace: Rc<NixBacktrace>,
-        fun: Box<dyn FnOnce(Rc<NixBacktrace>) -> NixResult>,
+        backtrace: NixBacktrace,
+        fun: Box<dyn FnOnce(&NixBacktrace) -> NixResult>,
     ) -> Self {
         LazyNixValue::Eval(backtrace, Rc::new(RefCell::new(Option::Some(fun))))
     }
 
-    pub fn new_callback_eval(
-        backtrace: Rc<NixBacktrace>,
-        callback: NixLambda,
-        value: NixVar,
-    ) -> Self {
+    pub fn new_callback_eval(backtrace: &NixBacktrace, callback: NixLambda, value: NixVar) -> Self {
         match callback {
             NixLambda::Apply(scope, param, expr) => {
                 let span = Rc::new(NixSpan::from_ast_node(&scope.file, &expr));
 
                 LazyNixValue::new_eval(
-                    Rc::new(NixBacktrace(
-                        span.clone(),
-                        Some((&*backtrace).clone()).into(),
-                    )),
+                    NixBacktrace(span.clone(), Some(backtrace.clone()).into()),
                     Box::new(move |backtrace| {
                         let scope = scope.new_child();
 
@@ -109,14 +102,12 @@ impl LazyNixValue {
                             }
                         };
 
-                        scope
-                            .visit_expr(backtrace.clone(), expr)?
-                            .resolve(backtrace)
+                        scope.visit_expr(backtrace, expr)?.resolve(backtrace)
                     }),
                 )
             }
             NixLambda::Builtin(builtin) => LazyNixValue::new_eval(
-                backtrace,
+                backtrace.clone(),
                 Box::new(move |backtrace| builtin.run(backtrace, value)),
             ),
         }
@@ -136,12 +127,12 @@ impl LazyNixValue {
         }
     }
 
-    pub fn resolve(this: &Rc<RefCell<Self>>, backtrace: Rc<NixBacktrace>) -> NixResult {
+    pub fn resolve(this: &Rc<RefCell<Self>>, backtrace: &NixBacktrace) -> NixResult {
         if let LazyNixValue::Concrete(value) = &*this.borrow() {
             return Ok(value.clone());
         }
 
-        let backtrace = match *this.borrow() {
+        let backtrace = &match *this.borrow() {
             LazyNixValue::Concrete(_) => unreachable!(),
             LazyNixValue::Pending(ref backtrace, ..) => backtrace.clone(),
             LazyNixValue::Eval(ref backtrace, ..) => backtrace.clone(),
@@ -150,7 +141,7 @@ impl LazyNixValue {
                 let label = NixLabelMessage::Empty;
                 let kind = NixLabelKind::Error;
 
-                let NixBacktrace(span, def_backtrace) = &**def_backtrace;
+                let NixBacktrace(span, def_backtrace) = def_backtrace;
 
                 let label = NixLabel::new(span.clone(), label, kind);
                 let called_label = NixLabel::new(
@@ -180,7 +171,7 @@ impl LazyNixValue {
             } => {
                 this.replace(LazyNixValue::Concrete(lhs.clone()));
 
-                scope.visit_expr(backtrace.clone(), rhs).and_then(|rhs| {
+                scope.visit_expr(&backtrace, rhs).and_then(|rhs| {
                     if matches!(&*rhs.0.borrow(), LazyNixValue::UpdateResolve { .. }) {
                         let LazyNixValue::UpdateResolve {
                             lhs: resolved_rhs,
@@ -215,7 +206,7 @@ impl LazyNixValue {
 
                         Ok(resolved_lhs)
                     } else {
-                        rhs.resolve(backtrace).and_then(|rhs| {
+                        rhs.resolve(&backtrace).and_then(|rhs| {
                             rhs.borrow()
                                 .as_attr_set()
                                 .ok_or_else(|| todo!("Error handling"))
@@ -238,7 +229,7 @@ impl LazyNixValue {
                 })
             }
             LazyNixValue::Pending(_, scope, expr) => {
-                let value = scope.visit_expr(backtrace.clone(), expr)?;
+                let value = scope.visit_expr(backtrace, expr)?;
 
                 let value = if matches!(&*value.0.borrow(), LazyNixValue::UpdateResolve { .. }) {
                     this.replace(value.0.borrow().clone());
@@ -269,9 +260,9 @@ impl LazyNixValue {
     pub fn resolve_set(
         this: &Rc<RefCell<Self>>,
         recursive: bool,
-        backtrace: Rc<NixBacktrace>,
+        backtrace: &NixBacktrace,
     ) -> NixResult {
-        let value = Self::resolve(this, backtrace.clone())?;
+        let value = Self::resolve(this, backtrace)?;
 
         if value.borrow().is_attr_set() {
             let values = if let Some(set) = value.borrow().as_attr_set() {
@@ -282,9 +273,9 @@ impl LazyNixValue {
 
             for var in values {
                 if recursive {
-                    var.resolve_set(true, backtrace.clone())?;
+                    var.resolve_set(true, backtrace)?;
                 } else {
-                    var.resolve(backtrace.clone())?;
+                    var.resolve(backtrace)?;
                 }
             }
         } else if let Some(list) = value.borrow().as_list() {
@@ -292,9 +283,9 @@ impl LazyNixValue {
                 .iter()
                 .map(|var| {
                     if recursive {
-                        var.resolve_set(true, backtrace.clone())?;
+                        var.resolve_set(true, backtrace)?;
                     } else {
-                        var.resolve(backtrace.clone())?;
+                        var.resolve(backtrace)?;
                     }
 
                     Ok(())

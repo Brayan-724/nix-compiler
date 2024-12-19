@@ -38,21 +38,22 @@ impl FileScope {
 
     pub fn evaluate(
         self: Rc<Self>,
-        backtrace: Option<Rc<NixBacktrace>>,
-    ) -> NixResult<(Rc<Scope>, Rc<NixBacktrace>, NixValueWrapped)> {
+        backtrace: impl Into<Rc<Option<NixBacktrace>>>,
+    ) -> NixResult<(Rc<Scope>, NixBacktrace, NixValueWrapped)> {
         let root = rnix::Root::parse(&self.content)
             .ok()
             .map_err(|error| NixError::from_parse_error(&self, error))?;
 
-        let backtrace = Rc::new(NixBacktrace(
+        let backtrace = NixBacktrace(
             Rc::new(NixSpan::from_ast_node(&self, &root)),
-            backtrace.map(|b| (&*b).clone()).into(),
-        ));
+            backtrace.into(),
+        );
 
         let scope = Scope::new_with_builtins(self);
 
-        let out = scope.visit_root(backtrace.clone(), root)?;
+        let out = scope.visit_root(&backtrace, root)?;
+        let out = out.resolve(&backtrace)?;
 
-        Ok((scope, backtrace.clone(), out.resolve(backtrace)?))
+        Ok((scope, backtrace, out))
     }
 }

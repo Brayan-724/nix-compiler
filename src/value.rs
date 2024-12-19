@@ -209,7 +209,7 @@ impl fmt::Display for NixValue {
 }
 
 impl NixValue {
-    pub fn try_eq(&self, other: &Self, backtrace: Rc<NixBacktrace>) -> NixResult<bool> {
+    pub fn try_eq(&self, other: &Self, backtrace: &NixBacktrace) -> NixResult<bool> {
         match (self, other) {
             (Self::AttrSet(v1), Self::AttrSet(v2)) => {
                 // TODO: If both sets denote a derivation (type = "derivation"),
@@ -221,7 +221,7 @@ impl NixValue {
                 }
 
                 for (a, b) in v1.iter().zip(v2) {
-                    if a.0 != b.0 || !a.1.try_eq(b.1, backtrace.clone())? {
+                    if a.0 != b.0 || !a.1.try_eq(b.1, backtrace)? {
                         return Ok(false);
                     }
                 }
@@ -419,7 +419,7 @@ impl PartialEq for NixLambda {
 }
 
 impl NixLambda {
-    pub fn call(&self, backtrace: Rc<NixBacktrace>, value: NixVar) -> NixResult<NixVar> {
+    pub fn call(&self, backtrace: &NixBacktrace, value: NixVar) -> NixResult<NixVar> {
         match self {
             NixLambda::Apply(scope, param, expr) => {
                 let scope = scope.clone().new_child();
@@ -429,7 +429,7 @@ impl NixLambda {
                         scope.set_variable(ident.clone(), value);
                     }
                     crate::NixLambdaParam::Pattern(pattern) => {
-                        let argument_var = value.resolve(backtrace.clone())?;
+                        let argument_var = value.resolve(backtrace)?;
                         let argument = argument_var.borrow();
                         let Some(argument) = argument.as_attr_set() else {
                             todo!("Error handling")
@@ -485,7 +485,7 @@ impl NixLambda {
                     }
                 };
 
-                scope.visit_expr(backtrace.clone(), expr.clone())
+                scope.visit_expr(backtrace, expr.clone())
             }
             NixLambda::Builtin(builtin) => builtin
                 .run(backtrace, value)

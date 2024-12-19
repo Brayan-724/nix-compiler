@@ -18,11 +18,11 @@ pub fn abort(message: String) {
 }
 
 #[builtin]
-pub fn all(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
+pub fn all(backtrace: &NixBacktrace, callback: NixLambda, list: NixList) {
     for item in list.0.iter() {
-        let callback = callback.call(backtrace.clone(), item.clone())?;
+        let callback = callback.call(backtrace, item.clone())?;
         let callback = callback
-            .resolve(backtrace.clone())?
+            .resolve(backtrace)?
             .borrow()
             .as_bool()
             .ok_or_else(|| todo!("Error handling"))?;
@@ -36,11 +36,11 @@ pub fn all(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
 }
 
 #[builtin]
-pub fn any(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
+pub fn any(backtrace: &NixBacktrace, callback: NixLambda, list: NixList) {
     for item in list.0.iter() {
-        let callback = callback.call(backtrace.clone(), item.clone())?;
+        let callback = callback.call(backtrace, item.clone())?;
         let callback = callback
-            .resolve(backtrace.clone())?
+            .resolve(backtrace)?
             .borrow()
             .as_bool()
             .ok_or_else(|| todo!("Error handling"))?;
@@ -130,13 +130,11 @@ pub fn compare_versions(first_arg: String, second_arg: String) {
 }
 
 #[builtin]
-pub fn concat_map(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
+pub fn concat_map(backtrace: &NixBacktrace, callback: NixLambda, list: NixList) {
     let mut out = vec![];
 
     for item in list.0.iter() {
-        let item = callback
-            .call(backtrace.clone(), item.clone())?
-            .resolve(backtrace.clone())?;
+        let item = callback.call(backtrace, item.clone())?.resolve(backtrace)?;
 
         let Some(item) = item.borrow().as_list() else {
             todo!("Error handling");
@@ -149,11 +147,11 @@ pub fn concat_map(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixLis
 }
 
 #[builtin]
-pub fn concat_string_sep(backtrace: Rc<NixBacktrace>, sep: String, list: NixList) {
+pub fn concat_string_sep(backtrace: &NixBacktrace, sep: String, list: NixList) {
     let list = list
         .0
         .iter()
-        .map(|i| i.resolve(backtrace.clone()))
+        .map(|i| i.resolve(backtrace))
         .collect::<NixResult<Vec<_>>>()?
         .iter()
         .map(|i| {
@@ -182,11 +180,11 @@ pub fn dir_of(s: NixValueWrapped) {
 }
 
 #[builtin]
-pub fn elem(backtrace: Rc<NixBacktrace>, x: NixValueWrapped, xs: NixList) {
+pub fn elem(backtrace: &NixBacktrace, x: NixValueWrapped, xs: NixList) {
     for item in xs.0.iter() {
-        let item = item.resolve(backtrace.clone())?;
+        let item = item.resolve(backtrace)?;
 
-        if x.borrow().try_eq(&*item.borrow(), backtrace.clone())? {
+        if x.borrow().try_eq(&*item.borrow(), backtrace)? {
             return Ok(NixValue::Bool(true).wrap());
         }
     }
@@ -195,20 +193,20 @@ pub fn elem(backtrace: Rc<NixBacktrace>, x: NixValueWrapped, xs: NixList) {
 }
 
 #[builtin]
-pub fn elemAt(backtrace: Rc<NixBacktrace>, xs: NixList, x: usize) {
+pub fn elemAt(backtrace: &NixBacktrace, xs: NixList, x: usize) {
     xs.0.get(x)
         .ok_or_else(|| todo!("Error handling: Out of bounds"))?
         .resolve(backtrace)
 }
 
 #[builtin]
-pub fn filter(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
+pub fn filter(backtrace: &NixBacktrace, callback: NixLambda, list: NixList) {
     let mut out = Vec::with_capacity(list.0.len());
 
     for value in list.0.iter() {
         let item = callback
-            .call(backtrace.clone(), value.clone())?
-            .resolve(backtrace.clone())?;
+            .call(backtrace, value.clone())?
+            .resolve(backtrace)?;
 
         let Some(item) = item.borrow().as_bool() else {
             todo!("Error handling");
@@ -223,11 +221,11 @@ pub fn filter(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
 }
 
 #[builtin]
-pub fn gen_list(backtrace: Rc<NixBacktrace>, callback: NixLambda, size: i64) {
+pub fn gen_list(backtrace: &NixBacktrace, callback: NixLambda, size: i64) {
     let out = (0..size)
         .map(|i| {
             LazyNixValue::new_callback_eval(
-                backtrace.clone(),
+                backtrace,
                 callback.clone(),
                 NixValue::Int(i).wrap_var(),
             )
@@ -271,13 +269,13 @@ pub fn hash_file(t: String, p: NixValueWrapped) {
 }
 
 #[builtin]
-pub fn import(backtrace: Rc<NixBacktrace>, argument: NixValueWrapped) {
+pub fn import(backtrace: &NixBacktrace, argument: NixValueWrapped) {
     let argument = argument.borrow();
 
     let path = match *argument {
         NixValue::AttrSet(ref set) => {
             let is_flake = if let Some(ty) = set.get("_type") {
-                ty.resolve(backtrace.clone())?
+                ty.resolve(backtrace)?
                     .borrow()
                     .cast_to_string()
                     .eq(&Some("flake".to_owned()))
@@ -290,7 +288,7 @@ pub fn import(backtrace: Rc<NixBacktrace>, argument: NixValueWrapped) {
             }
 
             let out_path = set.get("outPath").expect("Flake should have outPath");
-            let out_path = out_path.resolve(backtrace.clone())?;
+            let out_path = out_path.resolve(backtrace)?;
             let out_path = out_path.borrow();
 
             let NixValue::Path(ref path) = *out_path else {
@@ -309,7 +307,7 @@ pub fn import(backtrace: Rc<NixBacktrace>, argument: NixValueWrapped) {
 
 #[builtin]
 /// Log a variable and return it
-pub fn inspect(backtrace: Rc<NixBacktrace>, argument: NixVar) {
+pub fn inspect(backtrace: &NixBacktrace, argument: NixVar) {
     let argument = argument.resolve_set(true, backtrace)?;
     println!("{argument:#?}");
     Ok(argument)
@@ -366,13 +364,13 @@ pub fn length(list: NixList) {
 }
 
 #[builtin]
-pub fn list_to_attrs(backtrace: Rc<NixBacktrace>, list: NixList) {
+pub fn list_to_attrs(backtrace: &NixBacktrace, list: NixList) {
     let out = list
         .0
         .iter()
         .map(|item| {
             let (name, value) = {
-                let item = item.resolve(backtrace.clone())?;
+                let item = item.resolve(backtrace)?;
                 let item = item.borrow();
 
                 let Some(set) = item.as_attr_set() else {
@@ -386,7 +384,7 @@ pub fn list_to_attrs(backtrace: Rc<NixBacktrace>, list: NixList) {
                 todo!("Error handling!");
             };
 
-            let name = name.resolve(backtrace.clone())?;
+            let name = name.resolve(backtrace)?;
 
             let name = match &*name.borrow() {
                 NixValue::String(ref s) => s.clone(),
@@ -405,11 +403,11 @@ pub fn list_to_attrs(backtrace: Rc<NixBacktrace>, list: NixList) {
 }
 
 #[builtin]
-pub fn map(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
+pub fn map(backtrace: &NixBacktrace, callback: NixLambda, list: NixList) {
     let mut out = Vec::with_capacity(list.0.len());
 
     for value in list.0.iter() {
-        let value = callback.call(backtrace.clone(), value.clone())?;
+        let value = callback.call(backtrace, value.clone())?;
 
         out.push(value);
     }
@@ -418,7 +416,7 @@ pub fn map(backtrace: Rc<NixBacktrace>, callback: NixLambda, list: NixList) {
 }
 
 #[builtin]
-pub fn map_attrs(backtrace: Rc<NixBacktrace>, callback: NixLambda, set: NixValueWrapped) {
+pub fn map_attrs(backtrace: &NixBacktrace, callback: NixLambda, set: NixValueWrapped) {
     let set = set.borrow();
     let Some(set) = set.as_attr_set() else {
         todo!("Error handling");
@@ -428,14 +426,14 @@ pub fn map_attrs(backtrace: Rc<NixBacktrace>, callback: NixLambda, set: NixValue
 
     for (key, value) in set.iter() {
         let callback = callback
-            .call(backtrace.clone(), NixValue::String(key.clone()).wrap_var())?
-            .resolve(backtrace.clone())?;
+            .call(backtrace, NixValue::String(key.clone()).wrap_var())?
+            .resolve(backtrace)?;
         let callback = callback.borrow();
         let Some(callback) = callback.as_lambda() else {
             todo!("Error handling")
         };
 
-        let value = callback.call(backtrace.clone(), value.clone())?;
+        let value = callback.call(backtrace, value.clone())?;
 
         out.insert(key.clone(), value);
     }
@@ -511,7 +509,7 @@ pub fn read_file_type(path: NixValueWrapped) {
 
 #[builtin]
 pub fn replace_strings(
-    backtrace: Rc<NixBacktrace>,
+    backtrace: &NixBacktrace,
     from: NixList,
     to: NixList,
     s: String,
@@ -528,7 +526,7 @@ pub fn replace_strings(
     let mut to_cache = HashMap::new();
 
     for item in from.0.iter() {
-        let resolved = item.resolve(backtrace.clone())?;
+        let resolved = item.resolve(backtrace)?;
         let Some(search) = resolved.borrow().cast_to_string() else {
             todo!("Expected string in `from`");
         };
@@ -545,7 +543,7 @@ pub fn replace_strings(
         for (i, search) in from_vec.iter().enumerate() {
             if s_chars[p..].iter().collect::<String>().starts_with(search) {
                 let replace = to.0.get(i).unwrap();
-                let resolved_replace = replace.resolve(backtrace.clone())?;
+                let resolved_replace = replace.resolve(backtrace)?;
                 let Some(replace_str) = resolved_replace.borrow().cast_to_string() else {
                     todo!("Expected string in `to`");
                 };
@@ -579,7 +577,7 @@ pub fn replace_strings(
 }
 
 #[builtin()]
-pub fn remove_attrs(backtrace: Rc<NixBacktrace>, attrset: NixValueWrapped, attrs: NixList) {
+pub fn remove_attrs(backtrace: &NixBacktrace, attrset: NixValueWrapped, attrs: NixList) {
     if !attrset.borrow().is_attr_set() {
         todo!("Error handling")
     }
@@ -590,7 +588,7 @@ pub fn remove_attrs(backtrace: Rc<NixBacktrace>, attrset: NixValueWrapped, attrs
         .0
         .iter()
         .map(|attr| {
-            attr.resolve(backtrace.clone())
+            attr.resolve(backtrace)
                 .map(|attr| attr.borrow().cast_to_string().unwrap())
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -661,7 +659,7 @@ pub fn to_string(argument: String) {
 }
 
 #[builtin]
-pub fn throw(backtrace: Rc<NixBacktrace>, message: String) {
+pub fn throw(backtrace: &NixBacktrace, message: String) {
     // TODO: in `nix-env -qa` and other commands that try
     // to evaluate a derivation that throws an error is
     // silently skipped (which is not the case for abort).
@@ -682,7 +680,7 @@ pub fn throw(backtrace: Rc<NixBacktrace>, message: String) {
 }
 
 #[builtin()]
-pub fn try_eval(backtrace: Rc<NixBacktrace>, argument: NixVar) {
+pub fn try_eval(backtrace: &NixBacktrace, argument: NixVar) {
     if let Err(_) = argument.resolve(backtrace) {
         let mut result = NixAttrSet::new();
         result.insert("success".to_string(), NixValue::Bool(false).wrap_var());

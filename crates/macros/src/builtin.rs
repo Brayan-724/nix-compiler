@@ -65,7 +65,7 @@ impl Builtin {
 
                 fn run(
                     &self,
-                    backtrace: ::std::rc::Rc<crate::NixBacktrace>,
+                    backtrace: &crate::NixBacktrace,
                     argument: crate::NixVar
                 ) -> crate::result::NixResult {
                     let Self(#(#params_list),*) = &self;
