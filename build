@@ -151,6 +151,27 @@ def "main help" [subhelp?: string, ...args] {
   print ($more_help | align-list $commands_spec_width $help_display_list $help_render_list)
 }
 
+def try-cmd [f, minimal: bool] {
+  if $minimal {
+    let result = do --ignore-errors $f | complete
+
+    if $result.exit_code != 0 {
+      print -n $result.stdout
+      print -e (ansi lrb) $result.stderr (ansi reset)
+
+      return $result.exit_code
+    }
+  } else {
+    try {
+      do $f
+    } catch {
+      return 1
+    }
+  }
+
+  return 0
+}
+
 def all-examples [--minimal] {
   let examples = {cd examples; ls | where ($it.name | str ends-with .nix) }
   let examples = do $examples
@@ -205,25 +226,22 @@ def "main example" [example?: string, --minimal, --get-errors -e] {
     print -n "\n"
   }
 
-  let result = do --ignore-errors {
-    cargo run --quiet -- ($example.path)
-  } | complete
+  let build_result = try-cmd {
+    print "Compiling..."
+    cargo build --release --quiet
+  } $minimal
 
-  if $result.exit_code != 0 {
-    print -n $result.stdout
-    print -en (ansi lrb) $result.stderr (ansi reset)
-    print -n "\n"
+  if $build_result != 0 {
+    return $build_result
+  }
 
-    if $e {
-      return $result.stderr
-    } else {
-      return $result.exit_code
-    }
-  } else {
-    if $minimal != true {
-      print -n $result.stdout
-      print -n "\n"
-    }
+  let run_result = try-cmd {
+    print "Running..."
+    cargo run --release --quiet -- ($example.path)
+  } $minimal
+
+  if $run_result != 0 {
+    return $run_result
   }
 }
 
