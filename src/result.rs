@@ -1,14 +1,17 @@
+mod backtrace;
+
 use std::fmt::{self, Write};
 use std::rc::Rc;
 
-use rnix::{parser, NodeOrToken, SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
+use backtrace::BACKTRACE_ENV;
+use rnix::{parser, SyntaxKind};
 use rowan::ast::AstNode;
 use thiserror::Error;
 
 use crate::value::NixValueWrapped;
 use crate::FileScope;
 
-const BACKTRACE_ENV: &str = "NIX_BACKTRACE";
+pub use backtrace::{NixBacktrace, NixBacktraceKind};
 
 pub type NixResult<V = NixValueWrapped> = Result<V, NixError>;
 
@@ -18,9 +21,6 @@ pub struct NixError {
     pub labels: Vec<NixLabel>,
     pub backtrace: Rc<Option<NixBacktrace>>,
 }
-
-#[derive(Clone, Debug)]
-pub struct NixBacktrace(pub Rc<NixSpan>, pub Rc<Option<NixBacktrace>>);
 
 #[derive(Clone, Debug)]
 pub struct NixSpan {
@@ -93,43 +93,12 @@ impl NixLabelKind {
     }
 }
 
-impl fmt::Display for NixBacktrace {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Ok(backtrace_level) = std::env::var(BACKTRACE_ENV) else {
-            return Ok(());
-        };
-
-        if backtrace_level.starts_with("f") {
-            print_labels(
-                f,
-                &[NixLabel::new(
-                    self.0.clone(),
-                    NixLabelMessage::Empty,
-                    NixLabelKind::Help,
-                )],
-                None,
-                self.1.clone(),
-            )
+impl NixLabelMessage {
+    pub fn or_else(self, f: impl FnOnce() -> NixLabelMessage) -> NixLabelMessage {
+        if matches!(self, NixLabelMessage::Empty) {
+            f()
         } else {
-            let file = self
-                .0
-                .file
-                .path
-                .strip_prefix(std::env::current_dir().unwrap())
-                .map(|p| format!("./{}", p.display()))
-                .unwrap_or(self.0.file.path.display().to_string());
-
-            f.write_fmt(format_args!(
-                "    \x1b[34mat\x1b[36m {file}\x1b[0m {line}:{column}",
-                line = self.0.start.0,
-                column = self.0.start.1
-            ))?;
-
-            if let Some(backtrace) = &*self.1 {
-                f.write_fmt(format_args!("\n{backtrace}"))?;
-            }
-
-            Ok(())
+            self
         }
     }
 }
@@ -148,23 +117,6 @@ impl NixError {
             message: message.to_string(),
             labels: vec![label.into()],
             backtrace: None.into(),
-        }
-    }
-
-    pub fn from_backtrace(
-        backtrace: NixBacktrace,
-        kind: NixLabelKind,
-        label: NixLabelMessage,
-        message: impl ToString,
-    ) -> Self {
-        let NixBacktrace(span, backtrace) = backtrace;
-
-        let label = NixLabel::new(span.clone(), label, kind);
-
-        Self {
-            message: message.to_string(),
-            labels: vec![label],
-            backtrace,
         }
     }
 
@@ -277,35 +229,18 @@ impl NixSpan {
         }
     }
 
-    pub fn from_syntax_element(file: &Rc<FileScope>, node: &SyntaxElement) -> Self {
-        match node {
-            NodeOrToken::Node(node) => Self::from_syntax_node(file, node),
-            NodeOrToken::Token(node) => Self::from_syntax_token(file, node),
-        }
-    }
-
-    pub fn from_syntax_node(file: &Rc<FileScope>, node: &SyntaxNode) -> Self {
-        Self::from_offset(
-            file,
-            usize::from(node.text_range().start()) + 1,
-            usize::from(node.text_range().end()),
-        )
-    }
-
-    pub fn from_syntax_token(file: &Rc<FileScope>, node: &SyntaxToken) -> Self {
-        Self::from_offset(
-            file,
-            usize::from(node.text_range().start()) + 1,
-            usize::from(node.text_range().end()),
-        )
-    }
-
     pub fn from_ast_node(file: &Rc<FileScope>, node: &impl AstNode) -> Self {
         Self::from_offset(
             file,
             usize::from(node.syntax().text_range().start()) + 1,
             usize::from(node.syntax().text_range().end()),
         )
+    }
+}
+
+impl<T: AstNode> From<(&Rc<FileScope>, &T)> for NixSpan {
+    fn from(value: (&Rc<FileScope>, &T)) -> Self {
+        Self::from_ast_node(value.0, value.1)
     }
 }
 
@@ -559,7 +494,7 @@ fn print_labels(
     if let Some(backtrace) = &*backtrace {
         if f.alternate() {
             f.write_char('\n')?;
-        } else if std::env::var(BACKTRACE_ENV).is_ok() {
+        } else if BACKTRACE_ENV.is_disabled() {
             f.write_str("\nBACKTRACE: \n")?;
         }
 

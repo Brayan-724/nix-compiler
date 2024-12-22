@@ -6,8 +6,8 @@ use nix_macros::{builtin, gen_builtins};
 
 use crate::value::{NixAttrSet, NixLambda, NixList};
 use crate::{
-    LazyNixValue, NixBacktrace, NixError, NixLabel, NixLabelKind, NixLabelMessage, NixResult,
-    NixValue, NixValueWrapped, NixVar, Scope,
+    LazyNixValue, NixBacktrace, NixLabelKind, NixLabelMessage, NixResult, NixValue,
+    NixValueWrapped, NixVar, Scope,
 };
 
 use super::hash;
@@ -664,15 +664,11 @@ pub fn throw(backtrace: &NixBacktrace, message: String) {
     // to evaluate a derivation that throws an error is
     // silently skipped (which is not the case for abort).
 
-    let NixBacktrace(span, backtrace) = &*backtrace;
-
-    let label = NixLabel::new(span.clone(), NixLabelMessage::Empty, NixLabelKind::Error);
-
-    let error = NixError {
-        message: format!("Throwing: {message}"),
-        labels: vec![label],
-        backtrace: backtrace.clone(),
-    };
+    let error = backtrace.to_error(
+        NixLabelKind::Error,
+        NixLabelMessage::Empty,
+        format!("Throwing: {message}"),
+    );
 
     print!("{error}");
 

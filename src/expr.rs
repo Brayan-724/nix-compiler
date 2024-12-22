@@ -7,8 +7,8 @@ use rowan::ast::AstNode;
 use crate::result::{NixBacktrace, NixSpan};
 use crate::value::{NixLambda, NixList};
 use crate::{
-    LazyNixValue, NixAttrSet, NixError, NixLabel, NixLabelKind, NixLabelMessage, NixLambdaParam,
-    NixResult, NixValue, NixValueWrapped, NixVar, Scope,
+    LazyNixValue, NixAttrSet, NixBacktraceKind, NixError, NixLabel, NixLabelKind, NixLabelMessage,
+    NixLambdaParam, NixResult, NixValue, NixValueWrapped, NixVar, Scope,
 };
 
 impl Scope {
@@ -88,27 +88,28 @@ impl Scope {
                                         .unwrap()
                                         .get(&attr)
                                         .cloned()
-                                        .ok_or_else(|| NixError {
-                                            message: format!(
-                                                "Attribute '\x1b[1;95m{attr}\x1b[0m' missing"
-                                            ),
-                                            labels: vec![
-                                                NixLabel::new(
-                                                    NixSpan::from_ast_node(&file, &attr_node)
-                                                        .into(),
-                                                    NixLabelMessage::AttributeMissing,
-                                                    NixLabelKind::Error,
-                                                ),
-                                                NixLabel::new(
-                                                    NixSpan::from_ast_node(&file, &from_expr)
-                                                        .into(),
-                                                    NixLabelMessage::Custom(
-                                                        "Parent attrset".to_owned(),
+                                        .ok_or_else(|| {
+                                            backtrace.to_labeled_error(
+                                                vec![
+                                                    NixLabel::new(
+                                                        NixSpan::from_ast_node(&file, &attr_node)
+                                                            .into(),
+                                                        NixLabelMessage::AttributeMissing,
+                                                        NixLabelKind::Error,
                                                     ),
-                                                    NixLabelKind::Help,
+                                                    NixLabel::new(
+                                                        NixSpan::from_ast_node(&file, &from_expr)
+                                                            .into(),
+                                                        NixLabelMessage::Custom(
+                                                            "Parent attrset".to_owned(),
+                                                        ),
+                                                        NixLabelKind::Help,
+                                                    ),
+                                                ],
+                                                format!(
+                                                    "Attribute '\x1b[1;95m{attr}\x1b[0m' missing"
                                                 ),
-                                            ],
-                                            backtrace: Some(backtrace.clone()).into(),
+                                            )
                                         })?
                                         .resolve(backtrace)
                                 }),
@@ -130,12 +131,12 @@ impl Scope {
                                 self.new_backtrace(backtrace, &attr_node),
                                 Box::new(move |backtrace| {
                                     let Some(value) = scope.get_variable(attr.clone()) else {
-                                        return Err(NixError::from_message(
-                                            NixLabel::new(
+                                        return Err(backtrace.to_labeled_error(
+                                            vec![NixLabel::new(
                                                 NixSpan::from_ast_node(&file, &attr_node).into(),
                                                 NixLabelMessage::VariableNotFound,
                                                 NixLabelKind::Error,
-                                            ),
+                                            )],
                                             format!("Variable '{attr} not found"),
                                         ));
                                     };
@@ -171,6 +172,7 @@ impl Scope {
         NixBacktrace(
             Rc::new(NixSpan::from_ast_node(&self.file, node)),
             Some(backtrace.clone()).into(),
+            NixBacktraceKind::None,
         )
     }
 
@@ -179,6 +181,8 @@ impl Scope {
         backtrace: &NixBacktrace,
         node: ast::Expr,
     ) -> NixResult<NixVar> {
+        let backtrace = &backtrace.visit(&self.file, &node);
+
         match node {
             ast::Expr::Apply(node) => self.visit_apply(backtrace, node),
             ast::Expr::Assert(node) => self.visit_assert(backtrace, node),
@@ -208,23 +212,19 @@ impl Scope {
         backtrace: &NixBacktrace,
         node: ast::Apply,
     ) -> NixResult<NixVar> {
-        let backtrace = &NixBacktrace(
-            NixSpan::from_ast_node(&self.file, &node).into(),
-            Some(backtrace.clone()).into(),
-        );
+        let lambda_backtrace = backtrace.change_span((&self.file, &node.lambda().unwrap()));
 
-        self.visit_expr(
-            &self.new_backtrace(backtrace, &node),
-            node.lambda().unwrap(),
-        )?
-        .resolve(backtrace)?
-        .borrow()
-        .as_lambda()
-        .ok_or_else(|| todo!("Error handling: Lambda cast"))
-        .and_then(|l| {
-            let argument = self.visit_expr(backtrace, node.argument().unwrap())?;
-            l.call(backtrace, argument)
-        })
+        self.visit_expr(&lambda_backtrace, node.lambda().unwrap())?
+            .resolve(&lambda_backtrace)?
+            .borrow()
+            .as_lambda()
+            .ok_or_else(|| todo!("Error handling: Lambda cast"))
+            .and_then(|l| {
+                let backtrace = &backtrace.change_span((&self.file, &node.argument().unwrap()));
+
+                let argument = self.visit_expr(backtrace, node.argument().unwrap())?;
+                l.call(backtrace, argument)
+            })
     }
 
     pub fn visit_assert(
@@ -235,6 +235,7 @@ impl Scope {
         let condition = self
             .visit_expr(backtrace, node.condition().unwrap())?
             .resolve(backtrace)?;
+
         let Some(condition) = condition.borrow().as_bool() else {
             todo!("Error handling")
         };
@@ -245,15 +246,14 @@ impl Scope {
                 |expr| self.visit_expr(backtrace, expr),
             )
         } else {
-            Err(NixError {
-                message: "assert failed".to_owned(),
-                labels: vec![NixLabel::new(
+            Err(backtrace.to_labeled_error(
+                vec![NixLabel::new(
                     NixSpan::from_ast_node(&self.file, &node.condition().unwrap()).into(),
                     NixLabelMessage::AssertionFailed,
                     NixLabelKind::Error,
                 )],
-                backtrace: Some(backtrace.clone()).into(),
-            })
+                "assert failed",
+            ))
         }
     }
 
@@ -465,17 +465,10 @@ impl Scope {
         backtrace: &NixBacktrace,
         node: ast::HasAttr,
     ) -> NixResult<NixVar> {
-        let backtrace = &NixBacktrace(
-            NixSpan::from_ast_node(&self.file, &node).into(),
-            Some((&*backtrace).clone()).into(),
-        );
-
-        let value = self
-            .visit_expr(backtrace, node.expr().unwrap())?
-            .resolve(backtrace)?;
+        let value = self.visit_expr(backtrace, node.expr().unwrap())?;
 
         let has_attr = self
-            .resolve_attr_path(backtrace, value, node.attrpath().unwrap())?
+            .resolve_attr_path(backtrace, value, node.attrpath().unwrap().attrs())?
             .is_ok();
 
         Ok(NixValue::Bool(has_attr).wrap_var())
@@ -486,13 +479,13 @@ impl Scope {
         _backtrace: &NixBacktrace,
         node: ast::Ident,
     ) -> NixResult<NixVar> {
-        let node = node.ident_token().unwrap();
-        let varname = node.text().to_string();
+        let ident = node.ident_token().unwrap();
+        let varname = ident.text().to_string();
 
         self.get_variable(varname.clone()).ok_or_else(|| {
             NixError::from_message(
                 NixLabel::new(
-                    NixSpan::from_syntax_token(&self.file, &node).into(),
+                    NixSpan::from_ast_node(&self.file, &node).into(),
                     NixLabelMessage::VariableNotFound,
                     NixLabelKind::Error,
                 ),
@@ -687,11 +680,9 @@ impl Scope {
         backtrace: &NixBacktrace,
         node: ast::Select,
     ) -> NixResult<NixVar> {
-        let var = self
-            .visit_expr(backtrace, node.expr().unwrap())?
-            .resolve(backtrace)?;
+        let var = self.visit_expr(backtrace, node.expr().unwrap())?;
 
-        let var = self.resolve_attr_path(backtrace, var, node.attrpath().unwrap())?;
+        let var = self.resolve_attr_path(backtrace, var, node.attrpath().unwrap().attrs())?;
 
         if var.is_err() && node.default_expr().is_some() {
             self.visit_expr(backtrace, node.default_expr().unwrap())

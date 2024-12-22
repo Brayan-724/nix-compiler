@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::{fmt, fs};
 
-use crate::{NixBacktrace, NixError, NixResult, NixSpan, NixValueWrapped};
+use crate::{NixBacktrace, NixBacktraceKind, NixError, NixResult, NixSpan, NixValueWrapped};
 
 use super::Scope;
 
@@ -47,6 +47,7 @@ impl FileScope {
         let backtrace = NixBacktrace(
             Rc::new(NixSpan::from_ast_node(&self, &root)),
             backtrace.into(),
+            NixBacktraceKind::None,
         );
 
         let scope = Scope::new_with_builtins(self);

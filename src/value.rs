@@ -253,10 +253,9 @@ impl NixValue {
         NixVar(Rc::new(RefCell::new(LazyNixValue::Concrete(self.wrap()))))
     }
 
-    pub fn get(&self, backtrace: NixBacktrace, attr: &String) -> Result<Option<NixVar>, NixError> {
+    pub fn get(&self, backtrace: &NixBacktrace, attr: &String) -> Result<Option<NixVar>, NixError> {
         let NixValue::AttrSet(set) = self else {
-            return Err(NixError::from_backtrace(
-                backtrace,
+            return Err(backtrace.to_error(
                 crate::NixLabelKind::Error,
                 crate::NixLabelMessage::Empty,
                 "Error handling: Should be AttrSet",

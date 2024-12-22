@@ -10,8 +10,7 @@ pub use file::FileScope;
 
 use crate::result::{NixLabel, NixLabelKind, NixLabelMessage, NixSpan};
 use crate::{
-    builtins, flake, NixAttrSet, NixBacktrace, NixError, NixResult, NixValue, NixValueWrapped,
-    NixVar,
+    builtins, flake, NixAttrSet, NixBacktrace, NixResult, NixValue, NixValueWrapped, NixVar,
 };
 
 #[derive(Debug)]
@@ -119,40 +118,33 @@ impl Scope {
     pub fn resolve_attr_path<'a>(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
-        value: NixValueWrapped,
-        attr_path: ast::Attrpath,
+        value: NixVar,
+        mut attr_path: impl Iterator<Item = ast::Attr>,
     ) -> NixResult<NixResult<NixVar>> {
-        let mut attrs: Vec<_> = attr_path.attrs().collect();
-        let last_attr = attrs.pop().unwrap();
+        if let Some(attr_node) = attr_path.next() {
+            let attr = self.resolve_attr(backtrace, &attr_node)?;
 
-        let attr_set = self.resolve_attr_set_path(backtrace, value, attrs.into_iter())?;
+            let value = value.resolve(backtrace)?;
+            let set_value = match value.borrow().get(backtrace, &attr) {
+                Ok(v) => v,
+                Err(e) => return Ok(Err(e)),
+            };
 
-        let attr_set = match attr_set {
-            Ok(ok) => ok,
-            Err(e) => return Ok(Err(e)),
-        };
+            let Some(set_value) = set_value else {
+                return Ok(Err(backtrace.to_labeled_error(
+                    vec![NixLabel::new(
+                        NixSpan::from_ast_node(&self.file, &attr_node).into(),
+                        NixLabelMessage::AttributeMissing,
+                        NixLabelKind::Error,
+                    )],
+                    format!("Attribute '\x1b[1;95m{attr}\x1b[0m' missing"),
+                )));
+            };
 
-        let attr = self.resolve_attr(backtrace, &last_attr)?;
-
-        let attr_set = attr_set.borrow();
-
-        let val = attr_set.get((&*backtrace).clone(), &attr);
-
-        let val = match val {
-            Ok(ok) => ok,
-            Err(e) => return Ok(Err(e)),
-        };
-
-        Ok(val.ok_or_else(|| {
-            NixError::from_message(
-                NixLabel::new(
-                    NixSpan::from_ast_node(&self.file, &last_attr).into(),
-                    NixLabelMessage::AttributeMissing,
-                    NixLabelKind::Error,
-                ),
-                format!("Attribute '\x1b[1;95m{attr}\x1b[0m' missing"),
-            )
-        }))
+            self.resolve_attr_path(backtrace, set_value, attr_path)
+        } else {
+            Ok(Ok(value))
+        }
     }
 
     pub fn resolve_attr_set_path<'a>(
@@ -164,7 +156,7 @@ impl Scope {
         if let Some(attr) = attr_path.next() {
             let attr = self.resolve_attr(backtrace, &attr)?;
 
-            let set_value = match value.borrow().get((&*backtrace).clone(), &attr) {
+            let set_value = match value.borrow().get(backtrace, &attr) {
                 Ok(v) => v,
                 Err(e) => return Ok(Err(e)),
             };

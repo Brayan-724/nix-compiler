@@ -85,7 +85,7 @@ impl LazyNixValue {
                 let span = Rc::new(NixSpan::from_ast_node(&scope.file, &expr));
 
                 LazyNixValue::new_eval(
-                    NixBacktrace(span.clone(), Some(backtrace.clone()).into()),
+                    NixBacktrace::new_none(span.clone(), Some(backtrace.clone())),
                     Box::new(move |backtrace| {
                         let scope = scope.new_child();
 
@@ -141,7 +141,7 @@ impl LazyNixValue {
                 let label = NixLabelMessage::Empty;
                 let kind = NixLabelKind::Error;
 
-                let NixBacktrace(span, def_backtrace) = def_backtrace;
+                let NixBacktrace(span, def_backtrace, ..) = def_backtrace;
 
                 let label = NixLabel::new(span.clone(), label, kind);
                 let called_label = NixLabel::new(

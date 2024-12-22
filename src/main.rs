@@ -10,7 +10,8 @@ use std::rc::Rc;
 
 pub use builtins::{NixBuiltin, NixBuiltinInfo};
 pub use result::{
-    NixBacktrace, NixError, NixLabel, NixLabelKind, NixLabelMessage, NixResult, NixSpan,
+    NixBacktrace, NixBacktraceKind, NixError, NixLabel, NixLabelKind, NixLabelMessage, NixResult,
+    NixSpan,
 };
 pub use scope::{FileScope, Scope};
 pub use value::{LazyNixValue, NixAttrSet, NixLambdaParam, NixValue, NixValueWrapped, NixVar};
