@@ -675,6 +675,20 @@ pub fn throw(backtrace: &NixBacktrace, message: String) {
     std::process::exit(1)
 }
 
+#[builtin]
+pub fn trace(message: NixValueWrapped, argument: NixValueWrapped) {
+    let message = message.borrow();
+
+    if message.is_string() || message.is_path() {
+        let message = message.cast_to_string().unwrap();
+        println!("trace: {message}");
+    } else {
+        println!("trace: {message:?}");
+    }
+
+    Ok(argument)
+}
+
 #[builtin()]
 pub fn try_eval(backtrace: &NixBacktrace, argument: NixVar) {
     if let Err(_) = argument.resolve(backtrace) {
