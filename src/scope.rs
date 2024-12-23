@@ -104,8 +104,7 @@ impl Scope {
 
         println!("Importing {path:#?}");
 
-        let (_, backtrace, result) =
-            FileScope::from_path(path).evaluate(Some(backtrace.clone()))?;
+        let (backtrace, result) = FileScope::get_file(Some(backtrace.clone()), path)?;
 
         if path.file_name() == Some(OsStr::new("flake.nix")) {
             flake::resolve_flake(&backtrace, result)

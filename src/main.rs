@@ -5,15 +5,13 @@ mod result;
 mod scope;
 mod value;
 
-use std::env;
-use std::rc::Rc;
-
 pub use builtins::{NixBuiltin, NixBuiltinInfo};
 pub use result::{
     NixBacktrace, NixBacktraceKind, NixError, NixLabel, NixLabelKind, NixLabelMessage, NixResult,
     NixSpan,
 };
 pub use scope::{FileScope, Scope};
+use std::env;
 pub use value::{LazyNixValue, NixAttrSet, NixLambdaParam, NixValue, NixValueWrapped, NixVar};
 
 fn main() {
@@ -36,15 +34,12 @@ fn main() {
     let is_flake = !is_evaluation && arg.ends_with("flake.nix");
 
     let file = if is_evaluation {
-        Rc::new(FileScope {
-            path: std::env::current_dir().unwrap(),
-            content: arg,
-        })
+        FileScope::repl_file(std::env::current_dir().unwrap(), arg)
     } else {
-        FileScope::from_path(&arg)
+        FileScope::get_file(None, arg)
     };
 
-    let (_, backtrace, result) = file.evaluate(None).unwrap_or_else(|err| {
+    let (backtrace, result) = file.unwrap_or_else(|err| {
         eprintln!("{err}");
         std::process::exit(1);
     });

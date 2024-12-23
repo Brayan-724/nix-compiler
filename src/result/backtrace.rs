@@ -44,6 +44,10 @@ pub enum NixBacktraceKind {
     #[error("")]
     None,
 
+    #[error("File")]
+    File,
+
+    // Nix expresion
     #[error("Apply")]
     Apply,
     #[error("Assert")]
