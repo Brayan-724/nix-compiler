@@ -64,6 +64,10 @@ impl LazyNixValue {
         let lhs = LazyNixValue::resolve(lhs, &backtrace)?;
         let rhs = LazyNixValue::resolve(rhs, &backtrace)?;
 
+        if lhs.as_ptr() == rhs.as_ptr() {
+            return Ok(true);
+        }
+
         let lhs = lhs.borrow();
         let rhs = rhs.borrow();
 
