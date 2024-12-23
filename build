@@ -228,7 +228,7 @@ def "main example" [example?: string, --minimal, --get-errors -e] {
 
   let build_result = try-cmd {
     print "Compiling..."
-    cargo build --release --quiet
+    cargo build --release
   } $minimal
 
   if $build_result != 0 {
@@ -237,7 +237,7 @@ def "main example" [example?: string, --minimal, --get-errors -e] {
 
   let run_result = try-cmd {
     print "Running..."
-    cargo run --release --quiet -- ($example.path)
+    ./target/release/nix-compiler ($example.path)
   } $minimal
 
   if $run_result != 0 {
