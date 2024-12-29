@@ -7,7 +7,7 @@ use nix_macros::{builtin, gen_builtins};
 
 use crate::value::{NixAttrSet, NixLambda, NixList};
 use crate::{
-    LazyNixValue, NixBacktrace, NixLabelKind, NixLabelMessage, NixResult, NixValue,
+    LazyNixValue, NixBacktrace, NixLabelKind, NixLabelMessage, NixLambdaParam, NixResult, NixValue,
     NixValueWrapped, NixVar, Scope,
 };
 
@@ -219,6 +219,22 @@ pub fn filter(backtrace: &NixBacktrace, callback: NixLambda, list: NixList) {
     }
 
     Ok(NixValue::List(NixList(Rc::new(out))).wrap())
+}
+
+#[builtin]
+pub fn function_args(callback: NixLambda) {
+    match callback {
+        NixLambda::Apply(_, NixLambdaParam::Pattern(param), _) => Ok(NixValue::AttrSet(
+            NixAttrSet::from_iter(param.pat_entries().map(|p| {
+                let name = p.ident().unwrap().ident_token().unwrap().to_string();
+                let value = p.default().is_some();
+
+                (name, NixValue::Bool(value).wrap_var())
+            })),
+        )
+        .wrap()),
+        _ => Ok(NixValue::AttrSet(NixAttrSet::new()).wrap()),
+    }
 }
 
 #[builtin]
