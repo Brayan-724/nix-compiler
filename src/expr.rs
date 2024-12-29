@@ -368,16 +368,38 @@ impl Scope {
                 )),
             },
 
-            ast::BinOpKind::Mul => Err(NixError::todo(
-                NixSpan::from_ast_node(&self.file, &node).into(),
-                "Mul op",
-                None,
-            )),
-            ast::BinOpKind::Div => Err(NixError::todo(
-                NixSpan::from_ast_node(&self.file, &node).into(),
-                "Div op",
-                None,
-            )),
+            ast::BinOpKind::Mul => match lhs.borrow().deref() {
+                NixValue::Int(lhs) => self
+                    .visit_expr(backtrace, node.rhs().unwrap())?
+                    .resolve(backtrace)?
+                    .borrow()
+                    .as_int()
+                    .ok_or_else(|| todo!("Error handling: Int cast"))
+                    .map(|rhs| *lhs * rhs)
+                    .map(NixValue::Int)
+                    .map(NixValue::wrap_var),
+                _ => Err(NixError::todo(
+                    NixSpan::from_ast_node(&self.file, &node).into(),
+                    "Cannot mul",
+                    None,
+                )),
+            },
+            ast::BinOpKind::Div => match lhs.borrow().deref() {
+                NixValue::Int(lhs) => self
+                    .visit_expr(backtrace, node.rhs().unwrap())?
+                    .resolve(backtrace)?
+                    .borrow()
+                    .as_int()
+                    .ok_or_else(|| todo!("Error handling: Int cast"))
+                    .map(|rhs| *lhs / rhs)
+                    .map(NixValue::Int)
+                    .map(NixValue::wrap_var),
+                _ => Err(NixError::todo(
+                    NixSpan::from_ast_node(&self.file, &node).into(),
+                    "Cannot div",
+                    None,
+                )),
+            },
             ast::BinOpKind::And => lhs
                 .borrow()
                 .as_bool()
