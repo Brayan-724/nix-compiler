@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -234,6 +235,98 @@ pub fn gen_list(backtrace: &NixBacktrace, callback: NixLambda, size: i64) {
         .collect::<Vec<_>>();
 
     Ok(NixValue::List(NixList(Rc::new(out))).wrap())
+}
+
+fn hash_var(backtrace: &NixBacktrace, var: &NixVar, hasher: &mut impl Hasher) -> NixResult<u64> {
+    match &*var.resolve(backtrace)?.borrow() {
+        NixValue::AttrSet(_) => todo!("Error handling: Cannot hash AttrSet"),
+        NixValue::Lambda(_) => todo!("Error handling: Cannot hash Lambda"),
+        NixValue::Path(_) => todo!("Error handling: Cannot hash Path"),
+        NixValue::String(_) => todo!("Error handling: Cannot hash String"),
+
+        NixValue::Bool(e) => e.hash(hasher),
+        NixValue::Float(e) => (*e as u64).hash(hasher),
+        NixValue::Int(e) => e.hash(hasher),
+        NixValue::List(e) => {
+            e.0.iter()
+                .map(|i| hash_var(backtrace, i, hasher).map(|_| {}))
+                .collect::<NixResult<()>>()?
+        }
+        NixValue::Null => hasher.write(&[0]),
+    };
+
+    Ok(hasher.finish())
+}
+
+#[builtin]
+pub fn generic_closure(backtrace: &NixBacktrace, argument: NixValueWrapped) {
+    let argument = argument.borrow();
+    let argument = argument
+        .as_attr_set()
+        .ok_or_else(|| todo!("Error handling"))?;
+
+    let start_set = argument
+        .get("startSet")
+        .ok_or_else(|| todo!("Error handling: Getting startSet"))?
+        .resolve(backtrace)?
+        .borrow()
+        .as_list()
+        .ok_or_else(|| todo!("Error handling"))?
+        .0;
+
+    if start_set.is_empty() {
+        return Ok(NixValue::List(NixList(start_set)).wrap());
+    }
+
+    let mut work_set = VecDeque::new();
+    work_set.extend(start_set.iter().cloned());
+
+    let op = argument
+        .get("operator")
+        .ok_or_else(|| todo!("Error handling: Getting startSet"))?
+        .resolve(backtrace)?;
+    let op = op.borrow();
+    let op = op.as_lambda().ok_or_else(|| todo!("Error handling"))?;
+
+    /* Construct the closure by applying the operator to elements of
+    `workSet', adding the result to `workSet', continuing until
+    no new elements are found. */
+    let mut res = Vec::new();
+
+    // `doneKeys' doesn't need to be a GC root, because its values are
+    // reachable from res.
+
+    let mut done_keys = HashSet::new();
+    while let Some(item) = work_set.pop_front() {
+        let e = item.resolve(backtrace)?;
+        let e = e.borrow();
+        let e = e.as_attr_set().ok_or_else(|| todo!("Error handling"))?;
+
+        let key = e
+            .get("key")
+            .ok_or_else(|| todo!("Error handling: Getting key"))?;
+
+        let mut hasher = std::hash::DefaultHasher::new();
+        let key = hash_var(backtrace, key, &mut hasher)?;
+
+        if !done_keys.insert(key) {
+            continue;
+        }
+
+        res.push(item.clone());
+
+        /* Call the `operator' function with `e' as argument. */
+        let list = op
+            .call(backtrace, item.clone())?
+            .resolve(backtrace)?
+            .borrow()
+            .as_list()
+            .ok_or_else(|| todo!("Error handling: Cast as list"))?;
+
+        work_set.extend(list.0.iter().cloned());
+    }
+
+    Ok(NixValue::List(NixList(res.into())).wrap())
 }
 
 #[builtin()]
@@ -598,6 +691,11 @@ pub fn remove_attrs(backtrace: &NixBacktrace, attrset: NixValueWrapped, attrs: N
     }
 
     Ok(NixValue::AttrSet(attrset).wrap())
+}
+
+#[builtin]
+pub fn seq(_: NixValueWrapped, argument: NixValueWrapped) {
+    Ok(argument)
 }
 
 #[builtin]
