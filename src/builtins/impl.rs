@@ -790,7 +790,7 @@ pub fn throw(backtrace: &NixBacktrace, message: String) {
 }
 
 #[builtin]
-pub fn trace(message: NixValueWrapped, argument: NixValueWrapped) {
+pub fn trace(backtrace: &NixBacktrace, message: NixValueWrapped, argument: NixVar) {
     let message = message.borrow();
 
     if message.is_string() || message.is_path() {
@@ -800,7 +800,7 @@ pub fn trace(message: NixValueWrapped, argument: NixValueWrapped) {
         println!("trace: {message:?}");
     }
 
-    Ok(argument)
+    argument.resolve(backtrace)
 }
 
 #[builtin()]
@@ -825,6 +825,12 @@ pub fn try_eval(backtrace: &NixBacktrace, argument: NixVar) {
 #[builtin]
 pub fn type_of(argument: NixValueWrapped) {
     Ok(NixValue::String(argument.borrow().as_type().to_owned()).wrap())
+}
+
+// TODO: Add message to backtrace
+#[builtin]
+pub fn add_error_context(_: NixValueWrapped, argument: NixValueWrapped) {
+    Ok(argument)
 }
 
 gen_builtins! {
