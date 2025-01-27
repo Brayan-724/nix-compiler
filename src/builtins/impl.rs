@@ -534,17 +534,28 @@ pub fn map_attrs(backtrace: &NixBacktrace, callback: NixLambda, set: NixValueWra
     let mut out = NixAttrSet::new();
 
     for (key, value) in set.iter() {
-        let callback = callback
-            .call(backtrace, NixValue::String(key.clone()).wrap_var())?
-            .resolve(backtrace)?;
-        let callback = callback.borrow();
-        let Some(callback) = callback.as_lambda() else {
-            todo!("Error handling")
+        let new_value = {
+            let callback = callback.clone();
+            let key = key.clone();
+            let value = value.clone();
+            LazyNixValue::new_eval(
+                backtrace.clone(),
+                Box::from(move |backtrace| {
+                    let callback = callback
+                        .call(&backtrace, NixValue::String(key).wrap_var())?
+                        .resolve(&backtrace)?;
+                    let callback = callback.borrow();
+                    let Some(callback) = callback.as_lambda() else {
+                        todo!("Error handling")
+                    };
+
+                    let value = callback.call(&backtrace, value)?;
+                    value.resolve(&backtrace)
+                }),
+            )
         };
 
-        let value = callback.call(backtrace, value.clone())?;
-
-        out.insert(key.clone(), value);
+        out.insert(key.clone(), new_value.wrap_var());
     }
 
     Ok(NixValue::AttrSet(out).wrap())

@@ -6,6 +6,10 @@ name = "nix-compiler"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = [ "debug" ]
+debug = []
+
 [dependencies]
 hex = "0.4.3"
 nix-macros = { path = "./crates/macros/" }

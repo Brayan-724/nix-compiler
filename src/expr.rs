@@ -82,7 +82,7 @@ impl Scope {
                         LazyNixValue::new_eval(
                             self.new_backtrace(backtrace, &from_expr),
                             Box::new(move |backtrace| {
-                                from.resolve(backtrace)?
+                                from.resolve(&backtrace)?
                                     .borrow()
                                     .as_attr_set()
                                     .unwrap()
@@ -109,7 +109,7 @@ impl Scope {
                                             format!("Attribute '\x1b[1;95m{attr}\x1b[0m' missing"),
                                         )
                                     })?
-                                    .resolve(backtrace)
+                                    .resolve(&backtrace)
                             }),
                         )
                     } else {
@@ -119,10 +119,6 @@ impl Scope {
                         LazyNixValue::new_eval(
                             self.new_backtrace(backtrace, &attr_node),
                             Box::new(move |backtrace| {
-                                if &attr == "config" {
-                                    println!("GETTING CONFIG");
-                                }
-
                                 let Some(value) = scope.get_variable(attr.clone()) else {
                                     return Err(backtrace.to_labeled_error(
                                         vec![NixLabel::new(
@@ -134,7 +130,7 @@ impl Scope {
                                     ));
                                 };
 
-                                value.resolve(backtrace)
+                                value.resolve(&backtrace)
                             }),
                         )
                     };

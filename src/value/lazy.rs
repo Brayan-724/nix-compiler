@@ -18,7 +18,7 @@ pub enum LazyNixValue {
     Pending(NixBacktrace, Rc<Scope>, ast::Expr),
     Eval(
         NixBacktrace,
-        Rc<RefCell<Option<Box<dyn FnOnce(&NixBacktrace) -> NixResult>>>>,
+        Rc<RefCell<Option<Box<dyn FnOnce(NixBacktrace) -> NixResult>>>>,
     ),
     /// Partial resolve for update operator (`<expr> // <expr>`)
     UpdateResolve {
@@ -79,7 +79,7 @@ impl LazyNixValue {
 impl LazyNixValue {
     pub fn new_eval(
         backtrace: NixBacktrace,
-        fun: Box<dyn FnOnce(&NixBacktrace) -> NixResult>,
+        fun: Box<dyn FnOnce(NixBacktrace) -> NixResult>,
     ) -> Self {
         LazyNixValue::Eval(backtrace, Rc::new(RefCell::new(Option::Some(fun))))
     }
@@ -102,18 +102,18 @@ impl LazyNixValue {
                                 return Err(crate::NixError::todo(
                                     span,
                                     "Pattern lambda param",
-                                    Some((&*backtrace).clone()),
+                                    Some(backtrace),
                                 ))
                             }
                         };
 
-                        scope.visit_expr(backtrace, expr)?.resolve(backtrace)
+                        scope.visit_expr(&backtrace, expr)?.resolve(&backtrace)
                     }),
                 )
             }
             NixLambda::Builtin(builtin) => LazyNixValue::new_eval(
                 backtrace.clone(),
-                Box::new(move |backtrace| builtin.run(backtrace, value)),
+                Box::new(move |backtrace| builtin.run(&backtrace, value)),
             ),
         }
     }
@@ -269,7 +269,7 @@ impl LazyNixValue {
                 let value = eval
                     .borrow_mut()
                     .take()
-                    .expect("Eval cannot be called twice")(backtrace)?;
+                    .expect("Eval cannot be called twice")(backtrace.clone())?;
 
                 *this.borrow_mut().deref_mut() = LazyNixValue::Concrete(value.clone());
 
