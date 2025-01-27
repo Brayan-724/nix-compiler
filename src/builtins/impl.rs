@@ -131,10 +131,26 @@ pub fn compare_versions(first_arg: String, second_arg: String) {
 }
 
 #[builtin]
+pub fn concat_lists(backtrace: &NixBacktrace, list: NixList) {
+    let mut out = vec![];
+
+    for item in list.0.iter() {
+        let Some(item) = item.resolve(backtrace)?.borrow().as_list() else {
+            todo!("Error handling");
+        };
+
+        out.extend_from_slice(&item.0)
+    }
+
+    Ok(NixValue::List(NixList(Rc::new(out))).wrap())
+}
+
+#[builtin]
 pub fn concat_map(backtrace: &NixBacktrace, callback: NixLambda, list: NixList) {
     let mut out = vec![];
 
     for item in list.0.iter() {
+        // FIXME: Needs to me lazy
         let item = callback.call(backtrace, item.clone())?.resolve(backtrace)?;
 
         let Some(item) = item.borrow().as_list() else {
