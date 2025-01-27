@@ -416,8 +416,8 @@ pub fn import(backtrace: &NixBacktrace, argument: NixValueWrapped) {
 
 #[builtin]
 /// Log a variable and return it
-pub fn inspect(backtrace: &NixBacktrace, argument: NixVar) {
-    let argument = argument.resolve_set(true, backtrace)?;
+pub fn inspect(backtrace: &NixBacktrace, recursive: bool, argument: NixVar) {
+    let argument = argument.resolve_set(recursive, backtrace)?;
     println!("{argument:#?}");
     Ok(argument)
 }

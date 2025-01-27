@@ -87,6 +87,15 @@ impl FromNixExpr for String {
     }
 }
 
+impl FromNixExpr for bool {
+    fn from_nix_expr(backtrace: &NixBacktrace, var: NixVar) -> NixResult<Self> {
+        var.resolve(backtrace)?
+            .borrow()
+            .as_bool()
+            .ok_or_else(|| todo!("Error handling: Bool cast"))
+    }
+}
+
 // TODO:
 // impl FromNixExpr for NixAttrSet {
 //     fn from_nix_expr(

@@ -71,86 +71,78 @@ impl Scope {
                 for attr_node in entry.attrs() {
                     let attr = self.resolve_attr(backtrace, &attr_node)?;
 
-                    if let Some((from, from_expr)) = &from {
-                        let value = {
-                            let from = from.clone();
-                            let from_expr = from_expr.clone();
-                            let attr = attr.clone();
-                            let attr_node = attr_node.clone();
-                            let file = self.file.clone();
+                    let attr_node = attr_node.clone();
+                    let file = self.file.clone();
 
-                            LazyNixValue::new_eval(
-                                self.new_backtrace(backtrace, &from_expr),
-                                Box::new(move |backtrace| {
-                                    from.resolve(backtrace)?
-                                        .borrow()
-                                        .as_attr_set()
-                                        .unwrap()
-                                        .get(&attr)
-                                        .cloned()
-                                        .ok_or_else(|| {
-                                            backtrace.to_labeled_error(
-                                                vec![
-                                                    NixLabel::new(
-                                                        NixSpan::from_ast_node(&file, &attr_node)
-                                                            .into(),
-                                                        NixLabelMessage::AttributeMissing,
-                                                        NixLabelKind::Error,
-                                                    ),
-                                                    NixLabel::new(
-                                                        NixSpan::from_ast_node(&file, &from_expr)
-                                                            .into(),
-                                                        NixLabelMessage::Custom(
-                                                            "Parent attrset".to_owned(),
-                                                        ),
-                                                        NixLabelKind::Help,
-                                                    ),
-                                                ],
-                                                format!(
-                                                    "Attribute '\x1b[1;95m{attr}\x1b[0m' missing"
+                    let value = if let Some((from, from_expr)) = &from {
+                        let attr = attr.clone();
+                        let from = from.clone();
+                        let from_expr = from_expr.clone();
+
+                        LazyNixValue::new_eval(
+                            self.new_backtrace(backtrace, &from_expr),
+                            Box::new(move |backtrace| {
+                                from.resolve(backtrace)?
+                                    .borrow()
+                                    .as_attr_set()
+                                    .unwrap()
+                                    .get(&attr)
+                                    .cloned()
+                                    .ok_or_else(|| {
+                                        backtrace.to_labeled_error(
+                                            vec![
+                                                NixLabel::new(
+                                                    NixSpan::from_ast_node(&file, &attr_node)
+                                                        .into(),
+                                                    NixLabelMessage::AttributeMissing,
+                                                    NixLabelKind::Error,
                                                 ),
-                                            )
-                                        })?
-                                        .resolve(backtrace)
-                                }),
-                            )
-                        };
-
-                        out.borrow_mut()
-                            .as_attr_set_mut()
-                            .unwrap()
-                            .insert(attr, value.wrap_var());
+                                                NixLabel::new(
+                                                    NixSpan::from_ast_node(&file, &from_expr)
+                                                        .into(),
+                                                    NixLabelMessage::Custom(
+                                                        "Parent attrset".to_owned(),
+                                                    ),
+                                                    NixLabelKind::Help,
+                                                ),
+                                            ],
+                                            format!("Attribute '\x1b[1;95m{attr}\x1b[0m' missing"),
+                                        )
+                                    })?
+                                    .resolve(backtrace)
+                            }),
+                        )
                     } else {
-                        let value = {
-                            let scope = self.clone();
-                            let attr = attr.clone();
-                            let attr_node = attr_node.clone();
-                            let file = self.file.clone();
+                        let scope = self.clone();
+                        let attr = attr.clone();
 
-                            LazyNixValue::new_eval(
-                                self.new_backtrace(backtrace, &attr_node),
-                                Box::new(move |backtrace| {
-                                    let Some(value) = scope.get_variable(attr.clone()) else {
-                                        return Err(backtrace.to_labeled_error(
-                                            vec![NixLabel::new(
-                                                NixSpan::from_ast_node(&file, &attr_node).into(),
-                                                NixLabelMessage::VariableNotFound,
-                                                NixLabelKind::Error,
-                                            )],
-                                            format!("Variable '{attr} not found"),
-                                        ));
-                                    };
+                        LazyNixValue::new_eval(
+                            self.new_backtrace(backtrace, &attr_node),
+                            Box::new(move |backtrace| {
+                                if &attr == "config" {
+                                    println!("GETTING CONFIG");
+                                }
 
-                                    value.resolve(backtrace)
-                                }),
-                            )
-                        };
+                                let Some(value) = scope.get_variable(attr.clone()) else {
+                                    return Err(backtrace.to_labeled_error(
+                                        vec![NixLabel::new(
+                                            NixSpan::from_ast_node(&file, &attr_node).into(),
+                                            NixLabelMessage::VariableNotFound,
+                                            NixLabelKind::Error,
+                                        )],
+                                        format!("Variable '{attr} not found"),
+                                    ));
+                                };
 
-                        out.borrow_mut()
-                            .as_attr_set_mut()
-                            .unwrap()
-                            .insert(attr, value.wrap_var());
-                    }
+                                value.resolve(backtrace)
+                            }),
+                        )
+                    };
+
+                    out.borrow_mut()
+                        .as_attr_set_mut()
+                        .unwrap()
+                        .insert(attr, value.wrap_var());
                 }
 
                 Ok(out)
@@ -207,6 +199,7 @@ impl Scope {
         }
     }
 
+    #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
     pub fn visit_apply(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
@@ -227,6 +220,7 @@ impl Scope {
             })
     }
 
+    #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
     pub fn visit_assert(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
@@ -257,6 +251,7 @@ impl Scope {
         }
     }
 
+    #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
     pub fn visit_attrset(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
@@ -283,6 +278,7 @@ impl Scope {
         }
     }
 
+    #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
     pub fn visit_binop(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
@@ -479,6 +475,7 @@ impl Scope {
         }
     }
 
+    #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
     pub fn visit_error(
         self: &Rc<Self>,
         _backtrace: &NixBacktrace,
@@ -491,6 +488,7 @@ impl Scope {
         ))
     }
 
+    #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
     pub fn visit_hasattr(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
@@ -505,6 +503,7 @@ impl Scope {
         Ok(NixValue::Bool(has_attr).wrap_var())
     }
 
+    #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
     pub fn visit_ident(
         self: &Rc<Self>,
         _backtrace: &NixBacktrace,
@@ -525,6 +524,7 @@ impl Scope {
         })
     }
 
+    #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
     pub fn visit_ifelse(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
@@ -545,6 +545,7 @@ impl Scope {
         }
     }
 
+    #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
     pub fn visit_lambda(
         self: &Rc<Self>,
         _backtrace: &NixBacktrace,
@@ -569,10 +570,12 @@ impl Scope {
         )
     }
 
+    #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
     pub fn visit_legacylet(self: &Rc<Self>, _backtrace: &NixBacktrace, _node: ast::LegacyLet) -> ! {
         unimplemented!("This is legacy")
     }
 
+    #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
     pub fn visit_letin(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
@@ -588,11 +591,15 @@ impl Scope {
 
         let body = node.body().unwrap();
 
-        self.clone()
-            .new_child()
-            .visit_expr(&self.new_backtrace(backtrace, &body), body)
+        Ok(LazyNixValue::Pending(
+            backtrace.child_none(&self.file, &body),
+            self.clone().new_child(),
+            body,
+        )
+        .wrap_var())
     }
 
+    #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
     pub fn visit_list(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
@@ -609,6 +616,7 @@ impl Scope {
         .wrap_var())
     }
 
+    #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
     pub fn visit_literal(
         self: &Rc<Self>,
         _backtrace: &NixBacktrace,
@@ -629,6 +637,7 @@ impl Scope {
         }
     }
 
+    #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
     pub fn visit_paren(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
@@ -637,6 +646,7 @@ impl Scope {
         self.visit_expr(backtrace, node.expr().unwrap())
     }
 
+    #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
     pub fn visit_path(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
@@ -698,6 +708,7 @@ impl Scope {
         Ok(NixValue::Path(path.try_into().expect("TODO: Error handling")).wrap_var())
     }
 
+    #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
     pub fn visit_root(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
@@ -706,6 +717,7 @@ impl Scope {
         self.visit_expr(backtrace, node.expr().unwrap())
     }
 
+    #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
     pub fn visit_select(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
@@ -722,6 +734,7 @@ impl Scope {
         }
     }
 
+    #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
     pub fn visit_str(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
@@ -748,6 +761,7 @@ impl Scope {
         Ok(NixValue::String(content).wrap_var())
     }
 
+    #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
     pub fn visit_unaryop(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
@@ -778,6 +792,7 @@ impl Scope {
         }
     }
 
+    #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
     pub fn visit_with(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,

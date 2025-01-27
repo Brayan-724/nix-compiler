@@ -28,7 +28,8 @@ pub enum LazyNixValue {
         backtrace: NixBacktrace,
         scope: Rc<Scope>,
     },
-    Resolving(NixBacktrace),
+    /// (Definition backtrace, Use backtrace)
+    Resolving(NixBacktrace, NixBacktrace),
 }
 
 impl fmt::Debug for LazyNixValue {
@@ -136,12 +137,18 @@ impl LazyNixValue {
             return Ok(value.clone());
         }
 
-        let backtrace = &match *this.borrow() {
+        // Get backtrace to the definition of pending
+        let (backtrace, use_backtrace) = match *this.borrow() {
             LazyNixValue::Concrete(_) => unreachable!(),
-            LazyNixValue::Pending(ref backtrace, ..) => backtrace.clone(),
-            LazyNixValue::Eval(ref backtrace, ..) => backtrace.clone(),
-            LazyNixValue::UpdateResolve { ref backtrace, .. } => backtrace.clone(),
-            LazyNixValue::Resolving(ref def_backtrace) => {
+            LazyNixValue::Pending(ref def_backtrace, ..) => {
+                (def_backtrace.clone(), backtrace.clone())
+            }
+            LazyNixValue::Eval(ref def_backtrace, ..) => (def_backtrace.clone(), backtrace.clone()),
+            LazyNixValue::UpdateResolve {
+                backtrace: ref def_backtrace,
+                ..
+            } => (def_backtrace.clone(), backtrace.clone()),
+            LazyNixValue::Resolving(ref def_backtrace, ref use_backtrace) => {
                 let label = NixLabelMessage::Empty;
                 let kind = NixLabelKind::Error;
 
@@ -154,17 +161,27 @@ impl LazyNixValue {
                     NixLabelKind::Help,
                 );
 
+                let used_label = NixLabel::new(
+                    use_backtrace.0.clone(),
+                    NixLabelMessage::Custom("Already used here".to_string()),
+                    NixLabelKind::Help,
+                );
+
                 return Err(NixError {
                     message: "Infinite recursion detected. Tried to get a value that is resolving"
                         .to_owned(),
-                    labels: vec![label, called_label],
+                    labels: vec![label, called_label, used_label],
                     backtrace: def_backtrace.clone(),
                 });
             }
         };
 
-        let old = this.replace(LazyNixValue::Resolving(backtrace.clone()));
+        // Get on resolving state
+        let old = this.replace(LazyNixValue::Resolving(backtrace.clone(), use_backtrace));
 
+        let backtrace = &backtrace;
+
+        // Resolve the new value
         match old {
             LazyNixValue::Concrete(..) | LazyNixValue::Resolving(..) => unreachable!(),
             LazyNixValue::UpdateResolve {
@@ -275,26 +292,33 @@ impl LazyNixValue {
                 unreachable!()
             };
 
-            for var in values {
-                if recursive {
+            for var in &values {
+                var.resolve(backtrace)?;
+            }
+
+            if recursive {
+                for var in values {
                     var.resolve_set(true, backtrace)?;
-                } else {
-                    var.resolve(backtrace)?;
                 }
             }
         } else if let Some(list) = value.borrow().as_list() {
             list.0
                 .iter()
                 .map(|var| {
-                    if recursive {
-                        var.resolve_set(true, backtrace)?;
-                    } else {
-                        var.resolve(backtrace)?;
-                    }
-
+                    var.resolve(backtrace)?;
                     Ok(())
                 })
                 .collect::<Result<(), _>>()?;
+
+            if recursive {
+                list.0
+                    .iter()
+                    .map(|var| {
+                        var.resolve_set(true, backtrace)?;
+                        Ok(())
+                    })
+                    .collect::<Result<(), _>>()?;
+            }
         }
 
         Ok(value)

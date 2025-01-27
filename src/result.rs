@@ -25,7 +25,9 @@ pub struct NixError {
 #[derive(Clone, Debug)]
 pub struct NixSpan {
     pub file: Rc<FileScope>,
+    /// (line, column, last_newline)
     pub start: (usize, usize, usize),
+    /// (line, column, last_newline)
     pub end: (usize, usize, usize),
 }
 
@@ -194,6 +196,7 @@ impl NixError {
 }
 
 impl NixSpan {
+    /// (line, column, last_newline)
     fn get_line_column(file: &FileScope, mut offset: usize) -> (usize, usize, usize) {
         loop {
             let last_newline = offset
@@ -266,9 +269,9 @@ fn syntax_kind_to_string(kind: SyntaxKind) -> &'static str {
         SyntaxKind::TOKEN_ASSERT => "assert",
         SyntaxKind::TOKEN_ELSE => todo!(),
         SyntaxKind::TOKEN_IF => todo!(),
-        SyntaxKind::TOKEN_IN => todo!(),
+        SyntaxKind::TOKEN_IN => "in",
         SyntaxKind::TOKEN_INHERIT => todo!(),
-        SyntaxKind::TOKEN_LET => todo!(),
+        SyntaxKind::TOKEN_LET => "let",
         SyntaxKind::TOKEN_OR => todo!(),
         SyntaxKind::TOKEN_REC => todo!(),
         SyntaxKind::TOKEN_THEN => todo!(),
@@ -373,7 +376,7 @@ fn print_labels(
     }
 
     f.write_fmt(format_args!(
-        "{backtrace_padding} \x1b[1;34m-->\x1b[0m {}:{}:{}\n",
+        " {backtrace_padding} \x1b[1;34m-->\x1b[0m {}:{}:{}\n",
         first_label
             .span
             .file
@@ -446,12 +449,21 @@ fn print_labels(
                         + 1
                 };
 
+                let label_column_start = label.span.start.1;
+                let label_column_end = label.span.end.1;
+
                 let mut line = start_line;
                 f.write_fmt(format_args!(
                     "\n{backtrace_padding}\x1b[1;34m{line: >max_line_width$} {color}/ \x1b[0m",
                     color = label.kind.color()
                 ))?;
-                for c in label.span.file.content[offset_line..next_newline].chars() {
+
+                let ctx_len = next_newline.abs_diff(offset_line);
+
+                for (idx, c) in label.span.file.content[offset_line..next_newline]
+                    .chars()
+                    .enumerate()
+                {
                     if c == '\n' {
                         line += 1;
                         f.write_fmt(format_args!(
@@ -461,7 +473,16 @@ fn print_labels(
                         continue;
                     }
 
+                    let is_part_of_context =
+                        idx >= label_column_start && ctx_len - idx >= label_column_end;
+
+                    if !is_part_of_context && !c.is_ascii_whitespace() {
+                        // f.write_str(label.kind.color())?;
+                        f.write_str("\x1b[2m")?;
+                    }
+
                     f.write_char(c)?;
+                    f.write_str("\x1b[0m")?;
                 }
             }
 
