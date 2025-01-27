@@ -269,7 +269,9 @@ impl LazyNixValue {
                 let value = eval
                     .borrow_mut()
                     .take()
-                    .expect("Eval cannot be called twice")(backtrace.clone())?;
+                    .expect("Eval cannot be called twice")(
+                    backtrace.clone()
+                )?;
 
                 *this.borrow_mut().deref_mut() = LazyNixValue::Concrete(value.clone());
 

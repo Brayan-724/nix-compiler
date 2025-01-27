@@ -131,6 +131,26 @@ pub fn compare_versions(first_arg: String, second_arg: String) {
 }
 
 #[builtin]
+pub fn cat_attrs(backtrace: &NixBacktrace, attr: String, list: NixList) {
+    let mut out = vec![];
+
+    for item in list.0.iter() {
+        let item = item.resolve(backtrace)?;
+        let item = item.borrow();
+
+        let Some(item) = item.as_attr_set() else {
+            todo!("Error handling")
+        };
+
+        if let Some(item) = item.get(&attr) {
+            out.push(item.clone())
+        }
+    }
+
+    Ok(NixValue::List(NixList(Rc::new(out))).wrap())
+}
+
+#[builtin]
 pub fn concat_lists(backtrace: &NixBacktrace, list: NixList) {
     let mut out = vec![];
 
@@ -274,7 +294,6 @@ fn hash_var(backtrace: &NixBacktrace, var: &NixVar, hasher: &mut impl Hasher) ->
         NixValue::AttrSet(_) => todo!("Error handling: Cannot hash AttrSet"),
         NixValue::Lambda(_) => todo!("Error handling: Cannot hash Lambda"),
         NixValue::Path(_) => todo!("Error handling: Cannot hash Path"),
-        NixValue::String(_) => todo!("Error handling: Cannot hash String"),
 
         NixValue::Bool(e) => e.hash(hasher),
         NixValue::Float(e) => (*e as u64).hash(hasher),
@@ -284,6 +303,7 @@ fn hash_var(backtrace: &NixBacktrace, var: &NixVar, hasher: &mut impl Hasher) ->
                 .map(|i| hash_var(backtrace, i, hasher).map(|_| {}))
                 .collect::<NixResult<()>>()?
         }
+        NixValue::String(e) => e.hash(hasher),
         NixValue::Null => hasher.write(&[0]),
     };
 
