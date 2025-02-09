@@ -31,6 +31,16 @@ fn main() {
         return;
     };
 
+    // Profiling
+    #[cfg(feature = "profiling")]
+    tracing_subscriber::fmt()
+        // .with_target(false)
+        // .with_timer(tracing_subscriber::fmt::time::uptime())
+        .without_time()
+        .with_level(false)
+        .init();
+
+    // File evaluation
     let is_flake = !is_evaluation && arg.ends_with("flake.nix");
 
     let file = if is_evaluation {

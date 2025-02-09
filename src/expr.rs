@@ -163,7 +163,10 @@ impl Scope {
             NixBacktraceKind::None,
         )
     }
+}
 
+impl Scope {
+    #[cfg_attr(feature = "profiling", nix_macros::profile)]
     pub fn visit_expr(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
@@ -567,7 +570,11 @@ impl Scope {
     }
 
     #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
-    pub fn visit_legacylet(self: &Rc<Self>, _backtrace: &NixBacktrace, _node: ast::LegacyLet) -> ! {
+    pub fn visit_legacylet(
+        self: &Rc<Self>,
+        _backtrace: &NixBacktrace,
+        _node: ast::LegacyLet,
+    ) -> NixResult<NixVar> {
         unimplemented!("This is legacy")
     }
 
@@ -705,6 +712,7 @@ impl Scope {
     }
 
     #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
+    #[cfg_attr(feature = "profiling", nix_macros::profile)]
     pub fn visit_root(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,

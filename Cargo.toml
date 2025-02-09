@@ -6,19 +6,29 @@ name = "nix-compiler"
 version = "0.1.0"
 edition = "2021"
 
+[profile.dev]
+opt-level = 3
+
 [features]
-default = [ "debug" ]
+default = ["debug", "profiling"]
 debug = []
+profiling = ["dep:tracing", "dep:tracing-subscriber"]
 
 [dependencies]
-hex = "0.4.3"
 nix-macros = { path = "./crates/macros/" }
+
+# Hashing
+hex = "0.4.3"
+openssl = "0.10.68"
 
 # Parser
 rnix = "0.11.0"
 rowan = "0.15.0" # Ast interaction with rnix
 
+# Profiling
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", optional = true }
+
 # Utility
 thiserror = "1.0.65"
-openssl = "0.10.68"
 regex = "1.11.1"

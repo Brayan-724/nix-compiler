@@ -203,7 +203,7 @@ def all-examples [--minimal] {
 
 }
 
-def "main example" [example?: string, --minimal, --get-errors -e] {
+def "main example" [example?: string, --minimal, --get-errors -e, --dev --debug -d] {
   if $example == null {
     # Needs to be compilable for test it
     cargo check
@@ -228,7 +228,11 @@ def "main example" [example?: string, --minimal, --get-errors -e] {
 
   let build_result = try-cmd {
     print "Compiling..."
-    cargo build --release
+    if $debug {
+      cargo build
+    } else {
+      cargo build --release
+    }
   } $minimal
 
   if $build_result != 0 {
@@ -237,7 +241,11 @@ def "main example" [example?: string, --minimal, --get-errors -e] {
 
   let run_result = try-cmd {
     print "Running..."
+    if $debug {
+    ./target/debug/nix-compiler ($example.path)
+    } else {
     ./target/release/nix-compiler ($example.path)
+    }
   } $minimal
 
   if $run_result != 0 {
