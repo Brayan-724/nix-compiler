@@ -1,5 +1,7 @@
 #!/usr/bin/env nu
 
+use ./scripts/common.nu *
+
 def prepare-align-list [display] {
   ($in | each {|it| do $display $it | str length} | math max) + 4
 }
@@ -226,8 +228,8 @@ def "main example" [example?: string, --minimal, --get-errors -e, --dev --debug 
     print -n "\n"
   }
 
+  let _start = step start -n "====== Compiling..."
   let build_result = try-cmd {
-    print "Compiling..."
     mut features = []
 
     if $profile {
@@ -239,12 +241,14 @@ def "main example" [example?: string, --minimal, --get-errors -e, --dev --debug 
     cargo build $release_flag --features=($features)
   } $minimal
 
+  step end -n "Compiled" $_start
+
   if $build_result != 0 {
     return $build_result
   }
 
+  let _start = step start -n "====== Running..."
   let run_result = try-cmd {
-    print "Running..."
     if $profile {
       $env.RUST_LOG = "trace"
     }
@@ -258,9 +262,12 @@ def "main example" [example?: string, --minimal, --get-errors -e, --dev --debug 
     }
   } $minimal
 
+  step end -n "Run" $_start
+
   if $profile {
-    print "Profiling..."
-    nu ./analyze-tracing-log.nu
+    let _start = step start -n "====== Profiling..."
+    nu ./scripts/analyze-tracing-log.nu
+    step end -n "Profiled" $_start
     return
   }
 
