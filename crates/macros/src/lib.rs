@@ -26,11 +26,13 @@ macro_rules! setup_macro {
     };
 }
 
-setup_macro!(attribute ; builtin       => builtin::Builtin         );
-setup_macro!(proc_macro; gen_builtins  => gen_builtins::GetBuiltins);
+setup_macro!(attribute ; builtin       => builtin::Builtin          );
+setup_macro!(proc_macro; gen_builtins  => gen_builtins::GetBuiltins );
 
-setup_macro!(attribute ; profile       => profile::Profile         );
-setup_macro!(attribute ; profile_scope => profile::ProfileScope    );
+setup_macro!(attribute ; profile       => profile::Profile          );
+setup_macro!(attribute ; profile_scope => profile::ProfileScope     );
+setup_macro!(proc_macro; profile_start => profile::ProfileScopeStart);
+setup_macro!(proc_macro; profile_end   => profile::ProfileScopeEnd  );
 
 trait Macro<A, R> {
     fn parse(args: A) -> Result<R, Error>;
