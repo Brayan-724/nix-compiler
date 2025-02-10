@@ -141,3 +141,20 @@ impl Builtin {
         })
     }
 }
+
+impl super::AttributeMacro<Function> for Builtin {
+    fn parse_attribute(
+        _: proc_macro::TokenStream,
+        body: proc_macro::TokenStream,
+    ) -> Result<Function, Error> {
+        match venial::parse_item(body.into()) {
+            Err(e) => Err(e),
+            Ok(venial::Item::Function(func)) => Ok(func),
+            Ok(_) => Err(Error::new("")),
+        }
+    }
+
+    fn expand(value: Function) -> Result<TokenStream, Error> {
+        Builtin::new(value).and_then(Builtin::generate)
+    }
+}

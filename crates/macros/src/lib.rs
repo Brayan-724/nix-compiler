@@ -1,108 +1,82 @@
 mod builtin;
+mod gen_builtins;
 mod params;
+mod profile;
 
-use builtin::{get_builtins, Builtin};
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
-use venial::{parse_item, Error, Item};
+use quote::quote;
+use venial::Error;
 
-#[proc_macro_attribute]
-pub fn builtin(
-    _: proc_macro::TokenStream,
-    body: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
-    let func = match parse_item(body.into()) {
-        Err(e) => Err(e),
-        Ok(Item::Function(func)) => Ok(func),
-        Ok(_) => Err(Error::new("")),
+macro_rules! setup_macro {
+    (proc_macro; $name:ident => $struct:ty) => {
+        #[proc_macro]
+        pub fn $name(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+            <$struct as Macro<_, _>>::setup(input)
+        }
     };
 
-    func.and_then(Builtin::new)
-        .and_then(Builtin::generate)
-        .unwrap_or_else(|e| e.to_compile_error())
-        .into()
-}
-
-#[proc_macro]
-pub fn gen_builtins(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    gen_builtins_impl(input.into())
-        .unwrap_or_else(|e| e.to_compile_error())
-        .into()
-}
-
-fn gen_builtins_impl(input: TokenStream) -> Result<TokenStream, Error> {
-    let builtins = get_builtins()?
-        .split(";")
-        .map(|builtin| {
-            let builtin = format_ident!("{builtin}");
-
-            quote! { builtins.insert(<#builtin as crate::builtins::NixBuiltinInfo>::NAME.to_owned(), #builtin::generate().wrap_var()) }
-        })
-        .collect::<Vec<_>>();
-
-    Ok(quote! {
-        pub fn get_builtins() -> NixValue {
-            let mut builtins = crate::NixAttrSet::new();
-
-            #(#builtins;)*
-
-            {
-                macro_rules! insert {
-                    ($($name:ident = $value:expr);* $(;)?) => {
-                        $(
-                        builtins.insert(stringify!($name).to_owned(), $value.wrap_var());
-                        )*
-                    }
-                }
-
-                insert!(
-                    #input
-                );
-            }
-
-            NixValue::AttrSet(builtins)
+    (attribute; $name:ident => $struct:ty) => {
+        #[proc_macro_attribute]
+        pub fn $name(
+            input: proc_macro::TokenStream,
+            body: proc_macro::TokenStream,
+        ) -> proc_macro::TokenStream {
+            <$struct as Macro<_, _>>::setup((input, body))
         }
-    })
+    };
 }
 
-#[proc_macro_attribute]
-pub fn profile(
-    _: proc_macro::TokenStream,
-    body: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
-    let func = syn::parse_macro_input!(body as syn::ItemFn);
+setup_macro!(attribute ; builtin       => builtin::Builtin         );
+setup_macro!(proc_macro; gen_builtins  => gen_builtins::GetBuiltins);
 
-    profile_impl(func)
-        .unwrap_or_else(|e| e.to_compile_error())
-        .into()
+setup_macro!(attribute ; profile       => profile::Profile         );
+setup_macro!(attribute ; profile_scope => profile::ProfileScope    );
+
+trait Macro<A, R> {
+    fn parse(args: A) -> Result<R, Error>;
+    fn expand(value: R) -> Result<TokenStream, Error>;
+
+    fn setup(args: A) -> proc_macro::TokenStream {
+        Self::parse(args)
+            .and_then(Self::expand)
+            .unwrap_or_else(|e| e.to_compile_error())
+            .into()
+    }
 }
 
-fn profile_impl(func: syn::ItemFn) -> Result<TokenStream, Error> {
-    let func_attrs = &func.attrs;
-    let func_vis = &func.vis;
-    let func_ident = &func.sig.ident;
-    let func_args = &func.sig.inputs;
-    let func_ret = &func.sig.output;
-    let func_body = &func.block;
+trait ProcMacro<R> {
+    fn parse(input: proc_macro::TokenStream) -> Result<R, Error>;
 
-    let exit = "exit in {:?}";
+    fn expand(value: R) -> Result<TokenStream, Error>;
+}
 
-    Ok(quote! {
-        #(#func_attrs)*
-        #func_vis fn #func_ident(#func_args) #func_ret {
-            let start = ::std::time::SystemTime::now();
+trait AttributeMacro<R> {
+    fn parse_attribute(
+        input: proc_macro::TokenStream,
+        body: proc_macro::TokenStream,
+    ) -> Result<R, Error>;
 
-            let output = move || {
-                let __span = ::tracing::warn_span!(stringify!(#func_ident));
-                let __span = __span.enter();
+    fn expand(value: R) -> Result<TokenStream, Error>;
+}
 
-                #func_body
-            };
-            let output = output();
+impl<R, S: AttributeMacro<R>> Macro<(proc_macro::TokenStream, proc_macro::TokenStream), R> for S {
+    fn parse(
+        (input, body): (proc_macro::TokenStream, proc_macro::TokenStream),
+    ) -> Result<R, Error> {
+        S::parse_attribute(input, body)
+    }
 
-            ::tracing::warn!(target: stringify!(#func_ident), #exit, duration = start.elapsed());
+    fn expand(value: R) -> Result<TokenStream, Error> {
+        S::expand(value)
+    }
+}
 
-            output
-        }
-    })
+impl<R, S: ProcMacro<R>> Macro<proc_macro::TokenStream, R> for S {
+    fn parse(input: proc_macro::TokenStream) -> Result<R, Error> {
+        S::parse(input)
+    }
+
+    fn expand(value: R) -> Result<TokenStream, Error> {
+        S::expand(value)
+    }
 }
