@@ -60,5 +60,7 @@ def "main" [] {
   }
   | reject items
   | flatten results --all
+  | rename name
+  | sort-by name
   | table -e -i false
 }
