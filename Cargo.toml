@@ -12,10 +12,10 @@ opt-level = 3
 [features]
 default = ["debug"]
 debug = []
-profiling = ["dep:tracing", "dep:tracing-subscriber"]
+profiling = ["dep:tracing", "dep:tracing-subscriber", "nix-macros/profiling"]
 
 [dependencies]
-nix-macros = { path = "./crates/macros/" }
+nix-macros = { path = "./crates/macros/", default-features = false }
 
 # Hashing
 hex = "0.4.3"

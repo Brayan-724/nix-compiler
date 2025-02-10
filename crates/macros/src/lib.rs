@@ -4,7 +4,6 @@ mod params;
 mod profile;
 
 use proc_macro2::TokenStream;
-use quote::quote;
 use venial::Error;
 
 macro_rules! setup_macro {
