@@ -203,7 +203,7 @@ def all-examples [--minimal] {
 
 }
 
-def "main example" [example?: string, --minimal, --get-errors -e, --dev --debug -d] {
+def "main example" [example?: string, --minimal, --get-errors -e, --dev --debug -d, --profile] {
   if $example == null {
     # Needs to be compilable for test it
     cargo check
@@ -228,11 +228,15 @@ def "main example" [example?: string, --minimal, --get-errors -e, --dev --debug 
 
   let build_result = try-cmd {
     print "Compiling..."
-    if $debug {
-      cargo build
-    } else {
-      cargo build --release
-    }
+    mut features = []
+
+    if $profile {
+      $features = ($features | append "profiling")
+    } 
+
+    let release_flag = if $debug { "" } else { "--release" }
+    let features = $features | str join ","
+    cargo build $release_flag --features=($features)
   } $minimal
 
   if $build_result != 0 {
@@ -241,14 +245,26 @@ def "main example" [example?: string, --minimal, --get-errors -e, --dev --debug 
 
   let run_result = try-cmd {
     print "Running..."
-    if $debug {
-    ./target/debug/nix-compiler ($example.path)
+    if $profile {
+      $env.RUST_LOG = "trace"
+    }
+
+    let target = if $debug { "debug" } else { "release" }
+
+    if $profile {
+      ./target/($target)/nix-compiler ($example.path) | ansi strip | save -f tracing.log
     } else {
-    ./target/release/nix-compiler ($example.path)
+      ./target/($target)/nix-compiler ($example.path)
     }
   } $minimal
 
-  if $run_result != 0 {
+  if $profile {
+    print "Profiling..."
+    nu ./analyze-tracing-log.nu
+    return
+  }
+
+  if $run_result != 0 and not $profile {
     return $run_result
   }
 }

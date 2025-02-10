@@ -10,7 +10,7 @@ edition = "2021"
 opt-level = 3
 
 [features]
-default = ["debug", "profiling"]
+default = ["debug"]
 debug = []
 profiling = ["dep:tracing", "dep:tracing-subscriber"]
 
