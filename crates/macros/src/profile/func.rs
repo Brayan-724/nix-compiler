@@ -1,4 +1,7 @@
+#[cfg(feature = "profiling")]
 use quote::quote;
+#[cfg(not(feature = "profiling"))]
+use syn::spanned::Spanned;
 use syn::ItemFn;
 use venial::Error;
 
@@ -14,6 +17,7 @@ impl AttributeMacro<ItemFn> for Profile {
         syn::parse(body).map_err(|err| Error::new(err))
     }
 
+    #[cfg(feature = "profiling")]
     fn expand(func: ItemFn) -> Result<proc_macro2::TokenStream, venial::Error> {
         let func_attrs = &func.attrs;
         let func_vis = &func.vis;
@@ -42,5 +46,10 @@ impl AttributeMacro<ItemFn> for Profile {
                 output
             }
         })
+    }
+
+    #[cfg(not(feature = "profiling"))]
+    fn expand(func: ItemFn) -> Result<proc_macro2::TokenStream, venial::Error> {
+        Ok(quote::quote_spanned!(func.span() => #func))
     }
 }

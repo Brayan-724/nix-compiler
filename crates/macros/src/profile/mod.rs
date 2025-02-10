@@ -14,10 +14,16 @@ impl ProcMacro<()> for ProfileScopeStart {
         Ok(())
     }
 
+    #[cfg(feature = "profiling")]
     fn expand(_: ()) -> Result<proc_macro2::TokenStream, venial::Error> {
         Ok(quote::quote!(
             let _profile_start = ::std::time::SystemTime::now();
         ))
+    }
+
+    #[cfg(not(feature = "profiling"))]
+    fn expand(_: ()) -> Result<proc_macro2::TokenStream, venial::Error> {
+        Ok(quote::quote!())
     }
 }
 
@@ -28,10 +34,16 @@ impl ProcMacro<String> for ProfileScopeEnd {
         Ok(name)
     }
 
+    #[cfg(feature = "profiling")]
     fn expand(name: String) -> Result<proc_macro2::TokenStream, venial::Error> {
         let exit = "exit in {:?}";
         Ok(quote::quote!(
             ::tracing::warn!(target: #name, #exit, duration = _profile_start.elapsed());
         ))
+    }
+
+    #[cfg(not(feature = "profiling"))]
+    fn expand(_: String) -> Result<proc_macro2::TokenStream, venial::Error> {
+        Ok(quote::quote!())
     }
 }

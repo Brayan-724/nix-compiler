@@ -41,7 +41,7 @@ impl FileScope {
         path.canonicalize().unwrap()
     }
 
-    #[cfg_attr(feature = "profiling", nix_macros::profile)]
+    #[nix_macros::profile]
     pub fn get_file(
         backtrace: impl Into<Rc<Option<NixBacktrace>>>,
         path: impl AsRef<Path>,
@@ -91,6 +91,7 @@ impl FileScope {
             .and_then(|r| Ok((r.0.clone(), r.2.resolve(&r.0)?)))
     }
 
+    #[nix_macros::profile]
     fn raw_evaluate(
         self: Rc<Self>,
         backtrace: Rc<Option<NixBacktrace>>,

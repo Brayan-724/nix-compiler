@@ -13,7 +13,7 @@ export def "duration colored" [] : duration -> string {
 }
 
 export def "step start" [-n, name: string] : nothing -> datetime {
-  print -n $"(ansi yb)(char prompt) ($name)(if $n { "\n" })"
+  print -n $"(ansi yb)(char prompt) ($name)(ansi reset)(if $n { "\n" })"
 
   date now
 }
@@ -24,7 +24,7 @@ export def "step rename" [-n, name: string] : nothing -> datetime {
     print -n $"(ansi erase_entire_line)(ansi csi)1G"
   }
 
-  print -n $"(ansi yb)(char prompt) ($name)(if $n {"\n"})"
+  print -n $"(ansi yb)(char prompt) ($name)(ansi reset)(if $n {"\n"})"
 
   date now
 }
@@ -36,8 +36,8 @@ export def "step end" [-n, name: string, start?: datetime] {
   }
 
   if $start != null {
-    print $"(ansi gb)(char prompt) ($name) in ((date now) - $start)"
+    print $"(ansi gb)(char prompt) ($name) in ((date now) - $start)(ansi reset)"
   } else {
-    print $"(ansi gb)(char prompt) ($name)"
+    print $"(ansi gb)(char prompt) ($name)(ansi reset)"
   }
 }

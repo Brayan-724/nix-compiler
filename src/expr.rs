@@ -166,7 +166,6 @@ impl Scope {
 }
 
 impl Scope {
-    #[cfg_attr(feature = "profiling", nix_macros::profile)]
     pub fn visit_expr(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
@@ -712,7 +711,7 @@ impl Scope {
     }
 
     #[cfg_attr(any(feature = "debug", not(debug_assertions)), inline(always))]
-    #[cfg_attr(feature = "profiling", nix_macros::profile)]
+    #[nix_macros::profile]
     pub fn visit_root(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,

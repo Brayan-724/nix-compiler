@@ -1,6 +1,7 @@
 //! XXX: See https://github.com/rust-lang/rust/issues/54727
 //! This is useless until Rust supports proc macros on non declarations
 
+#[cfg(feature = "profiling")]
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 use syn::{LitStr, Stmt};
@@ -22,6 +23,7 @@ impl AttributeMacro<(String, Stmt)> for ProfileScope {
         Ok((name, expr))
     }
 
+    #[cfg(feature = "profiling")]
     fn expand((name, stmt): (String, Stmt)) -> Result<proc_macro2::TokenStream, venial::Error> {
         let (pre, post, out) = match stmt {
             Stmt::Local(local) => {
@@ -54,5 +56,10 @@ impl AttributeMacro<(String, Stmt)> for ProfileScope {
                 out
             } #post
         })
+    }
+
+    #[cfg(not(feature = "profiling"))]
+    fn expand((_, stmt): (String, Stmt)) -> Result<proc_macro2::TokenStream, venial::Error> {
+        Ok(quote::quote_spanned!(stmt.span() => #stmt))
     }
 }
