@@ -41,7 +41,7 @@ def "main" [] {
       }
 
     let out = [
-      [total min max mean median stddev];
+      [total min max mean median stddev impact];
       [
         ($items | length)
         ($items | math min | into duration | duration colored)
@@ -49,6 +49,7 @@ def "main" [] {
         ($items | math sum | into duration)
         ($items | math median | into int | into duration | duration colored)
         ($items | into float | math stddev | into int | into duration | duration colored)
+        ($items | math sum | into duration | duration colored)
       ]
     ]
     | upsert mean {|it| ($it.mean / ($items | length)) | duration colored}
