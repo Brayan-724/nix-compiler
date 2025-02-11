@@ -12,6 +12,20 @@ export def "duration colored" [] : duration -> string {
   }
 }
 
+export def "compare colored" [actual: cell-path, before: cell-path] : record -> string {
+  let dur = ($in | get $actual)
+  let percent = ($dur) - ($in | get $before)
+  let percent = ($percent / $dur * 10000 | into int) / 100
+
+  let percent = match 0 {
+    _ if $percent > 0 => $" \((ansi lrb)($percent)%(ansi reset)\)"
+    _ if $percent < 0 => $" \((ansi g  )($percent)%(ansi reset)\)"
+    _ => " (0%)"
+  }
+
+  $"($dur | duration colored)(ansi reset)($percent)"
+}
+
 export def "step start" [-n, name: string] : nothing -> datetime {
   print -n $"(ansi yb)(char prompt) ($name)(ansi reset)(if $n { "\n" })"
 
