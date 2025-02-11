@@ -248,6 +248,12 @@ def "main example" [example?: string, --minimal, --get-errors -e, --dev --debug 
   }
 
   let _start = step start -n "====== Running..."
+
+  # Save the trace for comparasion after the run
+  if $profile and (ls | where name == "tracing.log" | is-not-empty) {
+    mv -f tracing.log last-tracing.log
+  }
+
   let run_result = try-cmd {
     if $profile {
       $env.RUST_LOG = "trace"

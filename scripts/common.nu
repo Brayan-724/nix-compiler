@@ -14,7 +14,8 @@ export def "duration colored" [] : duration -> string {
 
 export def "compare colored" [actual: cell-path, before: cell-path] : record -> string {
   let dur = ($in | get $actual)
-  let percent = ($dur) - ($in | get $before)
+  let dur_before = ($in | get $before)
+  let percent = if $dur_before != null { ($dur) - $dur_before } else { 0 }
   let percent = ($percent / $dur * 10000 | into int) / 100
 
   let percent = match 0 {

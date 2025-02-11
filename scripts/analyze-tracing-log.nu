@@ -1,17 +1,15 @@
 use ./common.nu *
 
 def "main" [path?: path] {
-  main process $path
-  | update min {duration colored}
-  | update max {duration colored}
-  | update mean {duration colored}
-  | update median {duration colored}
-  | update stddev {duration colored}
-  | update impact {duration colored}
-  | table -e -i false
+  if $path == null and (ls | where name == "last-tracing.log" | is-not-empty) {
+    main compare last-tracing.log
+  } else {
+    main process $path | ignore
+  }
 }
 
-def "main process" [path?: path = ./tracing.log] {
+def "main process" [path?: path] {
+  let path = $path | default ./tracing.log
   let result = try {
     open $path
     | from nuon
@@ -45,12 +43,19 @@ def "main compare" [a: path, b?: path = ./tracing.log] {
 
   def "compare results" [actual: cell-path, before: cell-path] : table -> table {
     $in
-    | update $actual {|it| $it | compare colored $actual $before}
+    | update $actual {|it|
+      if $it.name == $it.before_name {
+        $it | compare colored $actual $before 
+      } else {
+        $in | duration colored 
+      }
+    }
     | reject $before
   }
 
   print "====== Results:"
   $b
+  | merge ($a.name | wrap before_name)
   # min
   | merge ($a.min | wrap before_min)
   | compare results $.min $.before_min
@@ -72,6 +77,7 @@ def "main compare" [a: path, b?: path = ./tracing.log] {
   | compare results $.impact $.before_impact
   # 
   | reject total
+  | reject before_name
   | table -e -i false
 }
 
