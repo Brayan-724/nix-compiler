@@ -22,6 +22,7 @@ pub struct Scope {
 }
 
 impl Scope {
+    #[nix_macros::profile]
     pub fn new_with_builtins(file_scope: Rc<FileScope>) -> Rc<Self> {
         macro_rules! insert {
             ($ident:ident; $key:ident = $value:expr) => {
@@ -59,6 +60,7 @@ impl Scope {
         })
     }
 
+    #[nix_macros::profile]
     pub fn new_child(self: Rc<Self>) -> Rc<Scope> {
         Rc::new(Scope {
             file: self.file.clone(),
@@ -68,6 +70,7 @@ impl Scope {
         })
     }
 
+    #[nix_macros::profile]
     pub fn new_child_from(self: Rc<Self>, variables: NixValueWrapped) -> Rc<Scope> {
         Rc::new(Scope {
             file: self.file.clone(),
@@ -77,6 +80,7 @@ impl Scope {
         })
     }
 
+    #[nix_macros::profile]
     pub fn set_variable(self: &Rc<Self>, varname: String, value: NixVar) -> Option<NixVar> {
         self.variables
             .borrow_mut()
@@ -85,6 +89,7 @@ impl Scope {
             .insert(varname, value)
     }
 
+    #[nix_macros::profile]
     pub fn get_variable(self: &Rc<Self>, varname: String) -> Option<NixVar> {
         self.variables
             .borrow()
@@ -114,6 +119,7 @@ impl Scope {
     }
 
     /// The first Result is fair, the second is the VariableNotFound error
+    #[nix_macros::profile]
     pub fn resolve_attr_path<'a>(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
@@ -146,6 +152,7 @@ impl Scope {
         }
     }
 
+    #[nix_macros::profile]
     pub fn resolve_attr_set_path<'a>(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
@@ -183,6 +190,7 @@ impl Scope {
         }
     }
 
+    #[nix_macros::profile]
     pub fn resolve_attr(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,

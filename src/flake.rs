@@ -11,9 +11,9 @@ pub fn resolve_flake(backtrace: &NixBacktrace, result: NixValueWrapped) -> NixRe
     let inputs = flake
         .get("inputs")
         .cloned()
-        .unwrap_or_else(|| NixValue::AttrSet(NixAttrSet::new()).wrap_var());
+        .map(|inputs| inputs.resolve(backtrace))
+        .unwrap_or_else(|| Ok(NixValue::AttrSet(NixAttrSet::new()).wrap()))?;
 
-    let inputs = inputs.resolve(backtrace)?;
     let inputs = inputs.borrow();
 
     let Some(inputs) = inputs.as_attr_set() else {
@@ -56,6 +56,8 @@ pub fn resolve_flake(backtrace: &NixBacktrace, result: NixValueWrapped) -> NixRe
         Ok((key.clone(), NixValue::AttrSet(out).wrap_var()))
     });
 
+    nix_macros::profile_start!();
+
     let outputs_var = flake.get("outputs").expect("Flake should export `outputs`");
 
     let outputs = outputs_var.resolve(backtrace)?;
@@ -80,6 +82,8 @@ pub fn resolve_flake(backtrace: &NixBacktrace, result: NixValueWrapped) -> NixRe
 
         insert!(input = input_path);
     }
+
+    nix_macros::profile_end!("resolve_flake_outputs");
 
     lambda
         .call(backtrace, NixValue::AttrSet(value).wrap_var())?

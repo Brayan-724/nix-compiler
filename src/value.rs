@@ -2,7 +2,6 @@ mod lazy;
 mod var;
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
 use std::fmt::{self, Write};
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -33,7 +32,7 @@ pub enum NixLambda {
 #[derive(Clone, PartialEq, Eq)]
 pub struct NixList(pub Rc<Vec<NixVar>>);
 
-pub type NixAttrSet = BTreeMap<String, NixVar>;
+pub type NixAttrSet = std::collections::BTreeMap<String, NixVar>;
 
 /// https://nix.dev/manual/nix/2.24/language/types
 #[derive(Default)]
@@ -429,6 +428,9 @@ impl NixLambda {
                     }
                     crate::NixLambdaParam::Pattern(pattern) => {
                         let argument_var = value.resolve(backtrace)?;
+
+                        nix_macros::profile_start!();
+
                         let argument = argument_var.borrow();
                         let Some(argument) = argument.as_attr_set() else {
                             todo!("Error handling")
@@ -481,6 +483,8 @@ impl NixLambda {
                                 todo!("Handle error: Unused keys: {unused:?}")
                             }
                         }
+
+                        nix_macros::profile_end!("before_lambda_call");
                     }
                 };
 

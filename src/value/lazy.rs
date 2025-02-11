@@ -132,10 +132,13 @@ impl LazyNixValue {
         }
     }
 
+    #[nix_macros::profile]
     pub fn resolve(this: &Rc<RefCell<Self>>, backtrace: &NixBacktrace) -> NixResult {
         if let LazyNixValue::Concrete(value) = &*this.borrow() {
             return Ok(value.clone());
         }
+
+        nix_macros::profile_start!();
 
         // Get backtrace to the definition of pending
         let (backtrace, use_backtrace) = match *this.borrow() {
@@ -179,6 +182,8 @@ impl LazyNixValue {
         // Get on resolving state
         let old = this.replace(LazyNixValue::Resolving(backtrace.clone(), use_backtrace));
 
+        nix_macros::profile_end!("lazy_starts_resolving");
+
         let backtrace = &backtrace;
 
         // Resolve the new value
@@ -204,16 +209,18 @@ impl LazyNixValue {
                             unreachable!()
                         };
 
+                        nix_macros::profile_start!();
+
                         let resolved_lhs = resolved_rhs
                             .borrow()
                             .as_attr_set()
                             .ok_or_else(|| todo!("Error handling"))
                             .map(|rhs| {
-                                let lhs_set = lhs.borrow().as_attr_set().cloned().unwrap();
+                                let mut lhs_set = lhs.borrow().as_attr_set().cloned().unwrap();
                                 let mut lhs = NixAttrSet::new();
 
-                                lhs.extend(lhs_set);
-                                lhs.extend(rhs.clone());
+                                lhs.append(&mut lhs_set);
+                                lhs.append(&mut rhs.clone());
 
                                 NixValue::AttrSet(lhs).wrap()
                             })?;
@@ -225,24 +232,29 @@ impl LazyNixValue {
                             scope: scope.clone(),
                         };
 
+                        nix_macros::profile_end!("lazy_update_resolve");
+
                         Ok(resolved_lhs)
                     } else {
                         rhs.resolve(&backtrace).and_then(|rhs| {
+                            nix_macros::profile_start!();
+
                             rhs.borrow()
                                 .as_attr_set()
                                 .ok_or_else(|| todo!("Error handling"))
                                 .map(|rhs| {
-                                    let lhs_set = lhs.borrow().as_attr_set().cloned().unwrap();
+                                    let mut lhs_set = lhs.borrow().as_attr_set().cloned().unwrap();
                                     let mut lhs = NixAttrSet::new();
 
-                                    lhs.extend(lhs_set);
-                                    lhs.extend(rhs.clone());
+                                    lhs.append(&mut lhs_set);
+                                    lhs.append(&mut rhs.clone());
 
                                     let value = NixValue::AttrSet(lhs).wrap();
 
                                     *this.borrow_mut().deref_mut() =
                                         LazyNixValue::Concrete(value.clone());
 
+                                    nix_macros::profile_end!("lazy_update_resolve");
                                     value
                                 })
                         })
