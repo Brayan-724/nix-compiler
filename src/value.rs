@@ -208,6 +208,7 @@ impl fmt::Display for NixValue {
 }
 
 impl NixValue {
+    #[nix_macros::profile]
     pub fn try_eq(&self, other: &Self, backtrace: &NixBacktrace) -> NixResult<bool> {
         match (self, other) {
             (Self::AttrSet(v1), Self::AttrSet(v2)) => {
@@ -244,14 +245,17 @@ impl NixValue {
         }
     }
 
+    #[nix_macros::profile]
     pub fn wrap(self) -> NixValueWrapped {
         Rc::new(RefCell::new(self))
     }
 
+    #[nix_macros::profile]
     pub fn wrap_var(self) -> NixVar {
         NixVar(Rc::new(RefCell::new(LazyNixValue::Concrete(self.wrap()))))
     }
 
+    #[nix_macros::profile]
     pub fn get(&self, backtrace: &NixBacktrace, attr: &String) -> Result<Option<NixVar>, NixError> {
         let NixValue::AttrSet(set) = self else {
             return Err(backtrace.to_error(
@@ -265,6 +269,7 @@ impl NixValue {
     }
 
     /// Returns (new_value, old_value)
+    #[nix_macros::profile]
     pub fn insert(&mut self, attr: String, value: NixVar) -> Option<(NixVar, Option<NixVar>)> {
         let NixValue::AttrSet(set) = self else {
             todo!("Error handling");
@@ -374,6 +379,7 @@ impl NixValue {
     }
 
     // https://nix.dev/manual/nix/2.24/language/builtins.html?highlight=abort#builtins-toString
+    #[nix_macros::profile]
     pub fn cast_to_string(&self) -> Option<String> {
         // TODO: AttrSet to String
         match self {
