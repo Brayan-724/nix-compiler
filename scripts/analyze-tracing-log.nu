@@ -44,7 +44,7 @@ def "main compare" [a: path, b?: path = ./tracing.log] {
   def "compare results" [actual: cell-path, before: cell-path] : table -> table {
     $in
     | update $actual {|it|
-      if $it.name == $it.before_name {
+      if $it.name == $it.before_name? {
         $it | compare colored $actual $before 
       } else {
         $in | duration colored 
