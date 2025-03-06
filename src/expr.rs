@@ -33,17 +33,20 @@ impl Scope {
 
         let attr = self.resolve_attr(backtrace, &last_attr_path)?;
 
-        let child = LazyNixValue::Pending(
-            self.new_backtrace(backtrace, &attr_value),
-            self.clone().new_child(),
-            attr_value,
-        )
-        .wrap_var();
+        // non-storeable attributes are ignored as empty strings
+        if !attr.is_empty() {
+            let child = LazyNixValue::Pending(
+                self.new_backtrace(backtrace, &attr_value),
+                self.clone().new_child(),
+                attr_value,
+            )
+            .wrap_var();
 
-        let mut target = target.borrow_mut();
-        let set = target.as_attr_set_mut().unwrap();
+            let mut target = target.borrow_mut();
+            let set = target.as_attr_set_mut().unwrap();
 
-        set.insert(attr, child);
+            set.insert(attr, child);
+        }
 
         Ok(out)
     }
