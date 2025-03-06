@@ -3,6 +3,7 @@ use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote, quote_spanned};
 use venial::{Error, Function};
 
+use crate::err_syn_to_venial;
 use crate::params::NixBuiltinParams;
 
 const REFLECTION_BUILTIN: &str = "__rust_reflection__nix-macros__builtins";
@@ -22,11 +23,12 @@ fn append_builtin(name: String) {
 pub struct Builtin {
     func: Function,
     params: NixBuiltinParams,
+    nix_ident: String,
     struct_name: Ident,
 }
 
 impl Builtin {
-    pub fn new(func: Function) -> Result<Self, Error> {
+    pub fn new(func: Function, renamed: Option<String>) -> Result<Self, Error> {
         let func_name = func.name.to_string();
         let struct_name = func_name
             .strip_prefix("r#")
@@ -39,19 +41,18 @@ impl Builtin {
 
         let params = NixBuiltinParams::new(&struct_name, &func.params)?;
 
+        let nix_ident = renamed.unwrap_or_else(|| struct_name.to_string().to_case(Case::Camel));
+
         Ok(Self {
             func,
-            struct_name,
             params,
+            nix_ident,
+            struct_name,
         })
     }
 
-    fn nix_ident(&self) -> String {
-        self.struct_name.to_string().to_case(Case::Camel)
-    }
-
     fn generate_builtin(&self) -> TokenStream {
-        let nix_ident = self.nix_ident();
+        let nix_ident = &self.nix_ident;
         let struct_name = &self.struct_name;
         let params_decl = &self.params.decl;
         let params_def = &self.params.def;
@@ -65,8 +66,8 @@ impl Builtin {
 
                 fn run(
                     &self,
-                    backtrace: &crate::NixBacktrace,
-                    argument: crate::NixVar
+                    _backtrace: &crate::NixBacktrace,
+                    _argument: crate::NixVar
                 ) -> crate::result::NixResult {
                     let Self(#(#params_list),*) = &self;
                     #(#params_decl)*
@@ -114,7 +115,7 @@ impl Builtin {
     }
 
     fn generate_info(&self) -> TokenStream {
-        let nix_ident = self.nix_ident();
+        let nix_ident = &self.nix_ident;
         let struct_name = &self.struct_name;
 
         quote_spanned! { self.struct_name.span() =>
@@ -142,19 +143,25 @@ impl Builtin {
     }
 }
 
-impl super::AttributeMacro<Function> for Builtin {
+impl super::AttributeMacro for Builtin {
+    type Item = (Function, Option<String>);
+
     fn parse_attribute(
-        _: proc_macro::TokenStream,
+        input: proc_macro::TokenStream,
         body: proc_macro::TokenStream,
-    ) -> Result<Function, Error> {
-        match venial::parse_item(body.into()) {
-            Err(e) => Err(e),
-            Ok(venial::Item::Function(func)) => Ok(func),
-            Ok(_) => Err(Error::new("")),
-        }
+    ) -> Result<Self::Item, Error> {
+        let venial::Item::Function(item) = venial::parse_item(body.into())? else {
+            return Err(Error::new("A function is expected in #[builtin]"));
+        };
+
+        let renamed = syn::parse::<Option<syn::LitStr>>(input)
+            .map_err(err_syn_to_venial)?
+            .map(|v| v.value());
+
+        Ok((item, renamed))
     }
 
-    fn expand(value: Function) -> Result<TokenStream, Error> {
-        Builtin::new(value).and_then(Builtin::generate)
+    fn expand((func, renamed): Self::Item) -> Result<TokenStream, Error> {
+        Builtin::new(func, renamed).and_then(Builtin::generate)
     }
 }

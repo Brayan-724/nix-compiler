@@ -9,16 +9,18 @@ use crate::AttributeMacro;
 
 pub struct Profile;
 
-impl AttributeMacro<ItemFn> for Profile {
+impl AttributeMacro for Profile {
+    type Item = ItemFn;
+
     fn parse_attribute(
         _: proc_macro::TokenStream,
         body: proc_macro::TokenStream,
-    ) -> Result<ItemFn, venial::Error> {
+    ) -> Result<Self::Item, venial::Error> {
         syn::parse(body).map_err(|err| Error::new(err))
     }
 
     #[cfg(feature = "profiling")]
-    fn expand(func: ItemFn) -> Result<proc_macro2::TokenStream, venial::Error> {
+    fn expand(func: Self::Item) -> Result<proc_macro2::TokenStream, venial::Error> {
         let func_attrs = &func.attrs;
         let func_vis = &func.vis;
         let func_ident = &func.sig.ident;
@@ -49,7 +51,7 @@ impl AttributeMacro<ItemFn> for Profile {
     }
 
     #[cfg(not(feature = "profiling"))]
-    fn expand(func: ItemFn) -> Result<proc_macro2::TokenStream, venial::Error> {
+    fn expand(func: Self::Item) -> Result<proc_macro2::TokenStream, venial::Error> {
         Ok(quote::quote_spanned!(func.span() => #func))
     }
 }

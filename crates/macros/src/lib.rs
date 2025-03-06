@@ -6,11 +6,15 @@ mod profile;
 use proc_macro2::TokenStream;
 use venial::Error;
 
+fn err_syn_to_venial(e: syn::Error) -> venial::Error {
+    venial::Error::new_at_span(e.span(), e)
+}
+
 macro_rules! setup_macro {
     (proc_macro; $name:ident => $struct:ty) => {
         #[proc_macro]
         pub fn $name(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-            <$struct as Macro<_, _>>::setup(input)
+            <$struct as Macro<_>>::setup(input)
         }
     };
 
@@ -20,7 +24,7 @@ macro_rules! setup_macro {
             input: proc_macro::TokenStream,
             body: proc_macro::TokenStream,
         ) -> proc_macro::TokenStream {
-            <$struct as Macro<_, _>>::setup((input, body))
+            <$struct as Macro<_>>::setup((input, body))
         }
     };
 }
@@ -33,9 +37,11 @@ setup_macro!(attribute ; profile_scope => profile::ProfileScope     );
 setup_macro!(proc_macro; profile_start => profile::ProfileScopeStart);
 setup_macro!(proc_macro; profile_end   => profile::ProfileScopeEnd  );
 
-trait Macro<A, R> {
-    fn parse(args: A) -> Result<R, Error>;
-    fn expand(value: R) -> Result<TokenStream, Error>;
+trait Macro<A> {
+    type Item;
+
+    fn parse(args: A) -> Result<Self::Item, Error>;
+    fn expand(value: Self::Item) -> Result<TokenStream, Error>;
 
     fn setup(args: A) -> proc_macro::TokenStream {
         Self::parse(args)
@@ -45,39 +51,47 @@ trait Macro<A, R> {
     }
 }
 
-trait ProcMacro<R> {
-    fn parse(input: proc_macro::TokenStream) -> Result<R, Error>;
+trait ProcMacro {
+    type Item;
 
-    fn expand(value: R) -> Result<TokenStream, Error>;
+    fn parse(input: proc_macro::TokenStream) -> Result<Self::Item, Error>;
+
+    fn expand(value: Self::Item) -> Result<TokenStream, Error>;
 }
 
-trait AttributeMacro<R> {
+trait AttributeMacro {
+    type Item;
+
     fn parse_attribute(
         input: proc_macro::TokenStream,
         body: proc_macro::TokenStream,
-    ) -> Result<R, Error>;
+    ) -> Result<Self::Item, Error>;
 
-    fn expand(value: R) -> Result<TokenStream, Error>;
+    fn expand(value: Self::Item) -> Result<TokenStream, Error>;
 }
 
-impl<R, S: AttributeMacro<R>> Macro<(proc_macro::TokenStream, proc_macro::TokenStream), R> for S {
+impl<S: AttributeMacro> Macro<(proc_macro::TokenStream, proc_macro::TokenStream)> for S {
+    type Item = S::Item;
+
     fn parse(
         (input, body): (proc_macro::TokenStream, proc_macro::TokenStream),
-    ) -> Result<R, Error> {
+    ) -> Result<Self::Item, Error> {
         S::parse_attribute(input, body)
     }
 
-    fn expand(value: R) -> Result<TokenStream, Error> {
+    fn expand(value: Self::Item) -> Result<TokenStream, Error> {
         S::expand(value)
     }
 }
 
-impl<R, S: ProcMacro<R>> Macro<proc_macro::TokenStream, R> for S {
-    fn parse(input: proc_macro::TokenStream) -> Result<R, Error> {
+impl<S: ProcMacro> Macro<proc_macro::TokenStream> for S {
+    type Item = S::Item;
+
+    fn parse(input: proc_macro::TokenStream) -> Result<Self::Item, Error> {
         S::parse(input)
     }
 
-    fn expand(value: R) -> Result<TokenStream, Error> {
+    fn expand(value: Self::Item) -> Result<TokenStream, Error> {
         S::expand(value)
     }
 }

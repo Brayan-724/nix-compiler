@@ -55,7 +55,7 @@ impl NixBuiltinParams {
             .collect::<(Vec<TokenStream>, Vec<TokenStream>)>();
 
         let def = if let Some(backtrace) = backtrace {
-            let mut out = vec![quote_spanned! { backtrace => &backtrace.clone()}];
+            let mut out = vec![quote_spanned! { backtrace => &_backtrace.clone()}];
             out.extend_from_slice(&def);
             out
         } else {
@@ -109,7 +109,7 @@ fn parse_param(
 
     if is_last {
         let decl = quote! {};
-        let def = quote_spanned! {param.span() => <#ty as crate::builtins::FromNixExpr>::from_nix_expr(&backtrace, argument)?};
+        let def = quote_spanned! {param.span() => <#ty as crate::builtins::FromNixExpr>::from_nix_expr(&_backtrace, _argument)?};
 
         (decl, def)
     } else {
@@ -122,7 +122,7 @@ fn parse_param(
             .map(|_| format_ident!("None", span = param.span()))
             .collect::<Vec<_>>();
         let new_param =
-            quote_spanned! {ty.span() => Some(::std::rc::Rc::new((backtrace.clone(), argument)))};
+            quote_spanned! {ty.span() => Some(::std::rc::Rc::new((_backtrace.clone(), _argument)))};
 
         let def = quote_spanned! {param.span() =>
             <#ty as crate::builtins::FromNixExpr>::from_nix_expr(& #param_ident.0, #param_ident.1.clone())?

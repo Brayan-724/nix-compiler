@@ -11,11 +11,13 @@ use crate::AttributeMacro;
 
 pub struct ProfileScope;
 
-impl AttributeMacro<(String, Stmt)> for ProfileScope {
+impl AttributeMacro for ProfileScope {
+    type Item = (String, Stmt);
+
     fn parse_attribute(
         input: proc_macro::TokenStream,
         body: proc_macro::TokenStream,
-    ) -> Result<(String, Stmt), venial::Error> {
+    ) -> Result<Self::Item, venial::Error> {
         let name = syn::parse::<LitStr>(input).map_err(|err| Error::new(err))?;
         let name = name.value();
         let expr = syn::parse(body).map_err(|err| Error::new(err))?;
@@ -24,7 +26,7 @@ impl AttributeMacro<(String, Stmt)> for ProfileScope {
     }
 
     #[cfg(feature = "profiling")]
-    fn expand((name, stmt): (String, Stmt)) -> Result<proc_macro2::TokenStream, venial::Error> {
+    fn expand((name, stmt): Self::Item) -> Result<proc_macro2::TokenStream, venial::Error> {
         let (pre, post, out) = match stmt {
             Stmt::Local(local) => {
                 let var_pat = &local.pat;
@@ -59,7 +61,7 @@ impl AttributeMacro<(String, Stmt)> for ProfileScope {
     }
 
     #[cfg(not(feature = "profiling"))]
-    fn expand((_, stmt): (String, Stmt)) -> Result<proc_macro2::TokenStream, venial::Error> {
+    fn expand((_, stmt): Self::Item) -> Result<proc_macro2::TokenStream, venial::Error> {
         Ok(quote::quote_spanned!(stmt.span() => #stmt))
     }
 }

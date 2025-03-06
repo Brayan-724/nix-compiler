@@ -5,7 +5,9 @@ use crate::builtin::get_builtins;
 
 pub struct GetBuiltins;
 
-impl super::ProcMacro<TokenStream> for GetBuiltins {
+impl super::ProcMacro for GetBuiltins {
+    type Item = TokenStream;
+
     fn parse(input: proc_macro::TokenStream) -> Result<TokenStream, venial::Error> {
         Ok(input.into())
     }
