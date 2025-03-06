@@ -440,6 +440,14 @@ pub fn hash_file(t: String, p: NixValueWrapped) {
 }
 
 #[builtin]
+pub fn head(backtrace: &NixBacktrace, list: NixList) {
+    list.0
+        .first()
+        .ok_or_else(|| todo!("Error handling: out of bounds"))?
+        .resolve(backtrace)
+}
+
+#[builtin]
 pub fn import(backtrace: &NixBacktrace, argument: NixValueWrapped) {
     let argument = argument.borrow();
 
