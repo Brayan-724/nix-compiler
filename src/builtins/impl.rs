@@ -184,7 +184,7 @@ pub fn concat_map(backtrace: &NixBacktrace, callback: NixLambda, list: NixList) 
 }
 
 #[builtin]
-pub fn concat_string_sep(backtrace: &NixBacktrace, sep: String, list: NixList) {
+pub fn concat_strings_sep(backtrace: &NixBacktrace, sep: String, list: NixList) {
     let list = list
         .0
         .iter()
