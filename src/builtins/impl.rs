@@ -257,6 +257,32 @@ pub fn filter(backtrace: &NixBacktrace, callback: NixLambda, list: NixList) {
     Ok(NixValue::List(NixList(Rc::new(out))).wrap())
 }
 
+#[builtin("foldl'")]
+pub fn foldl_(
+    backtrace: &NixBacktrace,
+    // arguments: acc, item
+    callback: NixLambda,
+    initial: NixValueWrapped,
+    list: NixList,
+) {
+    list.0.iter().fold(Ok(initial), |acc, item| {
+        // Spread error
+        let acc = acc?;
+
+        let callback = callback
+            .call(backtrace, LazyNixValue::Concrete(acc).wrap_var())?
+            .resolve(backtrace)?;
+
+        let new_acc = callback
+            .borrow()
+            .as_lambda()
+            .ok_or_else(|| todo!("Error handling: Lambda cast"))?
+            .call(backtrace, item.clone())?;
+
+        new_acc.resolve(backtrace)
+    })
+}
+
 #[builtin]
 pub fn function_args(callback: NixLambda) {
     match callback {
