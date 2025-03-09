@@ -1,11 +1,11 @@
-//! Inspired by https://github.com/malept/crypto-hash/blob/master/src/imp/openssl.rs
+//! enspired by https://github.com/malept/crypto-hash/blob/master/src/imp/openssl.rs
 
 use std::io::{self, Write};
 
 use openssl::hash;
 
 /// Available cryptographic hash functions.
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Algorithm {
     /// Popular message digest algorithm, only available for backwards compatibility purposes.
     MD5,
@@ -43,6 +43,11 @@ impl Hasher {
             Ok(hasher) => Hasher(hasher),
             Err(error_stack) => panic!("OpenSSL error(s): {}", error_stack),
         }
+    }
+
+    pub fn finish_with(&mut self, buf: &[u8]) -> Vec<u8> {
+        _ = self.write(buf);
+        self.finish()
     }
 
     /// Generate a digest from the data written to the `Hasher`.

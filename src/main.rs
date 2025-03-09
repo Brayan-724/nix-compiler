@@ -1,4 +1,5 @@
 pub mod builtins;
+pub mod derivation;
 mod expr;
 pub mod flake;
 mod result;
