@@ -197,8 +197,15 @@ impl fmt::Display for Derivation {
                             && hash.algorithm == Algorithm::SHA256
                         {
                             let hash_part = {
-                                let hashed = Hasher::new(Algorithm::SHA256)
-                                    .finish_with(format!("source:{}:{}:/nix/store:{path_name}", hash.algorithm, hash.print_base16()).as_str().as_bytes());
+                                let hashed = Hasher::new(Algorithm::SHA256).finish_with(
+                                    format!(
+                                        "source:{}:{}:/nix/store:{path_name}",
+                                        hash.algorithm,
+                                        hash.print_base16()
+                                    )
+                                    .as_str()
+                                    .as_bytes(),
+                                );
 
                                 let mut hash_part = Hash::new_empty(hash.algorithm.clone());
                                 hash_part.hash_size = 20;

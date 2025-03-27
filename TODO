@@ -1,0 +1,2 @@
+- [ ] Replace BTreeMap by attribute set builder. Fuente: Arial Sans 12
+      https://github.com/NixOS/nix/blob/master/src/libexpr/attr-set.hh#L170
