@@ -4,10 +4,12 @@ mod r#impl;
 use std::fmt::{self, Write};
 use std::path::PathBuf;
 
-use crate::value::{NixLambda, NixList};
-use crate::{NixBacktrace, NixResult, NixValue, NixValueWrapped, NixVar};
+use crate::value::{NixAttrSet, NixLambda, NixList};
+use crate::{NixBacktrace, NixError, NixResult, NixValue, NixValueWrapped, NixVar};
 
-pub use r#impl::{get_builtins, Abort, BaseNameOf, Import, Map, RemoveAttrs, Throw, ToString};
+pub use r#impl::{
+    get_builtins, Abort, BaseNameOf, DerivationImpl, Import, Map, RemoveAttrs, Throw, ToString,
+};
 
 pub trait FromNixExpr: Sized {
     fn from_nix_expr(backtrace: &NixBacktrace, var: NixVar) -> NixResult<Self>;
@@ -52,11 +54,7 @@ int_from_nix_expr! {usize, u64, u32, u16, u8}
 
 impl FromNixExpr for NixLambda {
     fn from_nix_expr(backtrace: &NixBacktrace, var: NixVar) -> NixResult<Self> {
-        var.resolve(backtrace)?
-            .borrow()
-            .as_lambda()
-            .cloned()
-            .ok_or_else(|| todo!("Error handling: Lambda cast"))
+        var.resolve(backtrace)?.borrow().cast_lambda(backtrace)
     }
 }
 
@@ -92,23 +90,19 @@ impl FromNixExpr for bool {
         var.resolve(backtrace)?
             .borrow()
             .as_bool()
-            .ok_or_else(|| todo!("Error handling: Bool cast"))
+            .ok_or_else(|| NixError::todo(backtrace.0.clone(), "Bool cast", backtrace.1.clone()))
     }
 }
 
-// TODO:
-// impl FromNixExpr for NixAttrSet {
-//     fn from_nix_expr(
-//             backtrace: Rc<NixBacktrace>,
-//             scope: Rc<Scope>,
-//             var: NixVar,
-//         ) -> NixResult<Self> {
-//         let value = scope.visit_expr(backtrace, expr.clone())?;
-//         let Some(value) = value.borrow().as_attr_set() else {
-//             todo!("Error handling");
-//         };
-//     }
-// }
+impl FromNixExpr for NixAttrSet {
+    fn from_nix_expr(backtrace: &NixBacktrace, var: NixVar) -> NixResult<Self> {
+        var.resolve(backtrace)?
+            .borrow()
+            .as_attr_set()
+            .cloned()
+            .ok_or_else(|| todo!("Error handling: Attrset cast"))
+    }
+}
 
 pub trait NixBuiltinInfo {
     const NAME: &str;

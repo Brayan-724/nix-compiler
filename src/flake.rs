@@ -1,5 +1,8 @@
 use crate::result::NixBacktrace;
-use crate::{LazyNixValue, NixAttrSet, NixResult, NixValue, NixValueWrapped, Scope};
+use crate::value::NixAttrSet;
+use crate::{
+    LazyNixValue, NixAttrSetDynamic, NixError, NixResult, NixValue, NixValueWrapped, Scope,
+};
 
 pub fn resolve_flake(backtrace: &NixBacktrace, result: NixValueWrapped) -> NixResult {
     let result = result.borrow();
@@ -10,9 +13,10 @@ pub fn resolve_flake(backtrace: &NixBacktrace, result: NixValueWrapped) -> NixRe
 
     let inputs = flake
         .get("inputs")
-        .cloned()
         .map(|inputs| inputs.resolve(backtrace))
-        .unwrap_or_else(|| Ok(NixValue::AttrSet(NixAttrSet::new()).wrap()))?;
+        .unwrap_or_else(|| {
+            Ok(NixValue::AttrSet(NixAttrSet::Dynamic(NixAttrSetDynamic::new().into())).wrap())
+        })?;
 
     let inputs = inputs.borrow();
 
@@ -40,7 +44,7 @@ pub fn resolve_flake(backtrace: &NixBacktrace, result: NixValueWrapped) -> NixRe
 
         let flake = Scope::import_path(backtrace, flake_path)?;
 
-        let mut out = NixAttrSet::new();
+        let mut out = NixAttrSetDynamic::new();
 
         out.insert(
             "_type".to_owned(),
@@ -53,12 +57,21 @@ pub fn resolve_flake(backtrace: &NixBacktrace, result: NixValueWrapped) -> NixRe
             LazyNixValue::Concrete(flake).wrap_var(),
         );
 
-        Ok((key.clone(), NixValue::AttrSet(out).wrap_var()))
+        Ok((
+            key.clone(),
+            NixValue::AttrSet(NixAttrSet::Dynamic(out.into())).wrap_var(),
+        ))
     });
 
     nix_macros::profile_start!();
 
-    let outputs_var = flake.get("outputs").expect("Flake should export `outputs`");
+    let Some(outputs_var) = flake.get("outputs") else {
+        return Err(NixError::todo(
+            backtrace.0.clone(),
+            "Meh",
+            backtrace.1.clone(),
+        ));
+    };
 
     let outputs = outputs_var.resolve(backtrace)?;
     let outputs = outputs.borrow();
@@ -67,7 +80,7 @@ pub fn resolve_flake(backtrace: &NixBacktrace, result: NixValueWrapped) -> NixRe
         todo!("outputs should be a lambda")
     };
 
-    let mut value = NixAttrSet::new();
+    let mut value = NixAttrSetDynamic::new();
 
     macro_rules! insert {
         ($key:ident = $value:expr) => {
@@ -86,6 +99,9 @@ pub fn resolve_flake(backtrace: &NixBacktrace, result: NixValueWrapped) -> NixRe
     nix_macros::profile_end!("resolve_flake_outputs");
 
     lambda
-        .call(backtrace, NixValue::AttrSet(value).wrap_var())?
+        .call(
+            backtrace,
+            NixValue::AttrSet(NixAttrSet::Dynamic(value.into())).wrap_var(),
+        )?
         .resolve(backtrace)
 }

@@ -24,7 +24,7 @@ impl super::ProcMacro for GetBuiltins {
 
         Ok(quote! {
             pub fn get_builtins() -> NixValue {
-                let mut builtins = crate::NixAttrSet::new();
+                let mut builtins = crate::value::NixAttrSetDynamic::new();
 
                 #(#builtins;)*
 
@@ -42,7 +42,7 @@ impl super::ProcMacro for GetBuiltins {
                     );
                 }
 
-                NixValue::AttrSet(builtins)
+                builtins.into()
             }
         })
     }

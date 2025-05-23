@@ -1,5 +1,6 @@
 mod file;
 
+use std::cell::RefCell;
 use std::ffi::OsStr;
 use std::path::Path;
 use std::rc::Rc;
@@ -9,15 +10,14 @@ use rnix::ast;
 pub use file::FileScope;
 
 use crate::result::{NixLabel, NixLabelKind, NixLabelMessage, NixSpan};
-use crate::{
-    builtins, flake, NixAttrSet, NixBacktrace, NixResult, NixValue, NixValueWrapped, NixVar,
-};
+use crate::value::attrset::AttrsetBuilder;
+use crate::{builtins, flake, NixAttrSetDynamic, NixBacktrace, NixResult, NixValue, NixVar};
 
 #[derive(Debug)]
 pub struct Scope {
     pub backtrace: Option<NixBacktrace>,
     pub file: Rc<FileScope>,
-    pub variables: NixValueWrapped,
+    pub variables: Rc<RefCell<AttrsetBuilder>>,
     pub parent: Option<Rc<Scope>>,
 }
 
@@ -30,11 +30,13 @@ impl Scope {
             };
         }
 
-        let mut globals = NixAttrSet::new();
+        let mut globals = NixAttrSetDynamic::new();
         let builtins = builtins::get_builtins();
 
+        insert!(globals; builtins = builtins);
         insert!(globals; abort = builtins::Abort::generate());
         insert!(globals; baseNameOf = builtins::BaseNameOf::generate());
+        insert!(globals; derivation = builtins::DerivationImpl::generate());
         insert!(globals; false = NixValue::Bool(false));
         insert!(globals; import = builtins::Import::generate());
         insert!(globals; map = builtins::Map::generate());
@@ -43,18 +45,17 @@ impl Scope {
         insert!(globals; toString = builtins::ToString::generate());
         insert!(globals; throw = builtins::Throw::generate());
         insert!(globals; true = NixValue::Bool(true));
-        insert!(globals; builtins = builtins);
 
         let parent = Rc::new(Scope {
             file: file_scope.clone(),
-            variables: NixValue::AttrSet(globals).wrap(),
+            variables: AttrsetBuilder::from(globals).wrap_mut(),
             parent: None,
             backtrace: None,
         });
 
         Rc::new(Self {
             file: file_scope,
-            variables: NixValue::AttrSet(NixAttrSet::new()).wrap(),
+            variables: AttrsetBuilder::new().wrap_mut(),
             parent: Some(parent),
             backtrace: None,
         })
@@ -64,14 +65,14 @@ impl Scope {
     pub fn new_child(self: Rc<Self>) -> Rc<Scope> {
         Rc::new(Scope {
             file: self.file.clone(),
-            variables: NixValue::AttrSet(NixAttrSet::new()).wrap(),
+            variables: AttrsetBuilder::new().wrap_mut(),
             parent: Some(self),
             backtrace: None,
         })
     }
 
     #[nix_macros::profile]
-    pub fn new_child_from(self: Rc<Self>, variables: NixValueWrapped) -> Rc<Scope> {
+    pub fn new_child_from(self: Rc<Self>, variables: Rc<RefCell<AttrsetBuilder>>) -> Rc<Scope> {
         Rc::new(Scope {
             file: self.file.clone(),
             variables,
@@ -81,20 +82,10 @@ impl Scope {
     }
 
     #[nix_macros::profile]
-    pub fn set_variable(self: &Rc<Self>, varname: String, value: NixVar) -> Option<NixVar> {
-        self.variables
-            .borrow_mut()
-            .as_attr_set_mut()
-            .unwrap()
-            .insert(varname, value)
-    }
-
-    #[nix_macros::profile]
     pub fn get_variable(self: &Rc<Self>, varname: String) -> Option<NixVar> {
         self.variables
-            .borrow()
-            .as_attr_set()
-            .unwrap()
+            .borrow_mut()
+            .cached()
             .get(&varname)
             .cloned()
             .or_else(|| {
@@ -120,7 +111,7 @@ impl Scope {
 
     /// The first Result is fair, the second is the VariableNotFound error
     #[nix_macros::profile]
-    pub fn resolve_attr_path<'a>(
+    pub fn resolve_attr_path(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
         value: NixVar,
@@ -147,44 +138,6 @@ impl Scope {
             };
 
             self.resolve_attr_path(backtrace, set_value, attr_path)
-        } else {
-            Ok(Ok(value))
-        }
-    }
-
-    #[nix_macros::profile]
-    pub fn resolve_attr_set_path<'a>(
-        self: &Rc<Self>,
-        backtrace: &NixBacktrace,
-        value: NixValueWrapped,
-        mut attr_path: impl Iterator<Item = ast::Attr>,
-    ) -> NixResult<NixResult<NixValueWrapped>> {
-        if let Some(attr) = attr_path.next() {
-            let attr = self.resolve_attr(backtrace, &attr)?;
-
-            let set_value = match value.borrow().get(backtrace, &attr) {
-                Ok(v) => v,
-                Err(e) => return Ok(Err(e)),
-            };
-
-            let Some(set_value) = set_value else {
-                // If `value` doesn't have `attr`, then create it
-                // as empty `AttrSet`
-                let (last, _) = value
-                    .borrow_mut()
-                    .insert(attr, NixValue::AttrSet(NixAttrSet::new()).wrap_var())
-                    .unwrap();
-
-                return self.resolve_attr_set_path(backtrace, last.resolve(backtrace)?, attr_path);
-            };
-
-            let set_value = set_value.resolve(backtrace)?;
-
-            if !set_value.borrow().is_attr_set() {
-                todo!("Error handling for {:#}", set_value.borrow());
-            };
-
-            self.resolve_attr_set_path(backtrace, set_value, attr_path)
         } else {
             Ok(Ok(value))
         }

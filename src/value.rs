@@ -1,20 +1,21 @@
+pub mod attrset;
 mod lazy;
+mod pretty_print;
 mod var;
 
 use std::cell::RefCell;
-use std::fmt::{self, Write};
-use std::ops::Deref;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use rnix::ast;
+
+pub use attrset::{AttrsetBuilder, NixAttrSet, NixAttrSetDynamic};
 pub use lazy::LazyNixValue;
 pub use var::NixVar;
 
-use rnix::ast;
-
 use crate::builtins::NixBuiltin;
 use crate::scope::Scope;
-use crate::{NixBacktrace, NixError, NixResult};
+use crate::{NixBacktrace, NixError, NixLabelKind, NixLabelMessage, NixResult};
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum NixLambdaParam {
@@ -31,8 +32,6 @@ pub enum NixLambda {
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct NixList(pub Rc<Vec<NixVar>>);
-
-pub type NixAttrSet = std::collections::BTreeMap<String, NixVar>;
 
 /// https://nix.dev/manual/nix/2.24/language/types
 #[derive(Default)]
@@ -51,176 +50,16 @@ pub enum NixValue {
 
 pub type NixValueWrapped = Rc<RefCell<NixValue>>;
 
-impl fmt::Debug for NixValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            NixValue::AttrSet(set) => {
-                let mut map = f.debug_map();
-
-                for (key, value) in set {
-                    map.entry(key, value);
-                }
-
-                map.finish()
-            }
-            NixValue::Bool(true) => f.write_str("true"),
-            NixValue::Bool(false) => f.write_str("false"),
-            NixValue::Float(val) => f.write_str(&val.to_string()),
-            NixValue::Int(val) => f.write_str(&val.to_string()),
-            NixValue::Lambda(NixLambda::Apply(..)) => f.write_str("<lamda>"),
-            NixValue::Lambda(NixLambda::Builtin(builtin)) => fmt::Debug::fmt(builtin, f),
-            NixValue::List(list) => {
-                let mut debug_list = f.debug_list();
-
-                for item in &*list.0 {
-                    debug_list.entry(item);
-                }
-
-                debug_list.finish()
-            }
-            NixValue::Null => f.write_str("null"),
-            NixValue::Path(path) => fmt::Debug::fmt(path, f),
-            NixValue::String(s) => {
-                f.write_char('"')?;
-                f.write_str(s)?;
-                f.write_char('"')
-            }
-        }
-    }
-}
-
-impl fmt::Display for NixValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            NixValue::AttrSet(set) => {
-                let width = f.width().unwrap_or_default();
-                let outside_pad = " ".repeat(width);
-
-                let width = width + 2;
-                let pad = " ".repeat(width);
-
-                f.write_char('{')?;
-
-                if f.alternate() {
-                    f.write_char('\n')?;
-                }
-
-                for (key, value) in set {
-                    let value = value.as_concrete().unwrap_or_else(|| {
-                        eprintln!("Can't display something unresolved, run `.resolve_set()` before display it");
-                        std::process::exit(1)
-                    });
-
-                    let value = value.as_ref().borrow();
-                    let value = value.deref();
-
-                    if f.alternate() {
-                        f.write_str(&pad)?;
-                    } else {
-                        f.write_char(' ')?;
-                    }
-
-                    f.write_str(key)?;
-                    f.write_str(" = ")?;
-
-                    if f.alternate() {
-                        f.write_fmt(format_args!("{value:#width$}"))?;
-                    } else {
-                        fmt::Display::fmt(value, f)?;
-                    }
-
-                    f.write_char(';')?;
-
-                    if f.alternate() {
-                        f.write_char('\n')?;
-                    }
-                }
-
-                if f.alternate() {
-                    f.write_str(&outside_pad)?;
-                } else {
-                    f.write_char(' ')?;
-                }
-
-                f.write_char('}')
-            }
-            NixValue::Bool(true) => f.write_str("true"),
-            NixValue::Bool(false) => f.write_str("false"),
-            NixValue::Float(val) => f.write_str(&val.to_string()),
-            NixValue::Int(val) => f.write_str(&val.to_string()),
-            NixValue::Lambda(NixLambda::Apply(..)) => f.write_str("<lamda>"),
-            NixValue::Lambda(NixLambda::Builtin(builtin)) => fmt::Display::fmt(builtin, f),
-            NixValue::List(list) => {
-                let width = f.width().unwrap_or_default();
-                let outside_pad = " ".repeat(width);
-
-                let width = width + 2;
-                let pad = " ".repeat(width);
-
-                f.write_char('[')?;
-
-                if f.alternate() {
-                    f.write_char('\n')?;
-                }
-
-                for value in &*list.0 {
-                    let value = value.as_concrete().unwrap_or_else(|| {
-                        eprintln!("Can't display something unresolved, run `.resolve_set()` before display it");
-                        std::process::exit(1)
-                    });
-                    let value = value.as_ref().borrow();
-                    let value = value.deref();
-
-                    if f.alternate() {
-                        f.write_str(&pad)?;
-                    } else {
-                        f.write_char(' ')?;
-                    }
-
-                    if f.alternate() {
-                        f.write_fmt(format_args!("{value:#width$}"))?;
-                    } else {
-                        fmt::Display::fmt(value, f)?;
-                    }
-
-                    if f.alternate() {
-                        f.write_char('\n')?;
-                    }
-                }
-
-                if f.alternate() {
-                    f.write_str(&outside_pad)?;
-                } else {
-                    f.write_char(' ')?;
-                }
-
-                f.write_char(']')
-            }
-            NixValue::Null => f.write_str("null"),
-            NixValue::Path(path) => f.write_fmt(format_args!("{}", path.display())),
-            NixValue::String(s) => {
-                f.write_char('"')?;
-                f.write_str(s)?;
-                f.write_char('"')
-            }
-        }
-    }
-}
-
 impl NixValue {
     #[nix_macros::profile]
     pub fn try_eq(&self, other: &Self, backtrace: &NixBacktrace) -> NixResult<bool> {
         match (self, other) {
-            (Self::AttrSet(v1), Self::AttrSet(v2)) => {
-                // TODO: If both sets denote a derivation (type = "derivation"),
-                // then compare their outPaths.
-                // https://github.com/NixOS/nix/blob/da7e3be8fc4338e9cd7bb49eac3cbcf5f0560850/src/libexpr/eval.cc#L2758-L2765
-
+            (Self::AttrSet(NixAttrSet::Dynamic(v1)), Self::AttrSet(NixAttrSet::Dynamic(v2))) => {
                 if v1.len() != v2.len() {
                     return Ok(false);
                 }
 
-                for (a, b) in v1.iter().zip(v2) {
+                for (a, b) in v1.iter().zip(v2.iter()) {
                     if a.0 != b.0 || !a.1.try_eq(b.1, backtrace)? {
                         return Ok(false);
                     }
@@ -228,6 +67,24 @@ impl NixValue {
 
                 Ok(true)
             }
+            // If both sets are derivation, then compare their outPaths.
+            (
+                Self::AttrSet(NixAttrSet::Derivation {
+                    selected_output: v1_out,
+                    derivation: v1_dev,
+                }),
+                Self::AttrSet(NixAttrSet::Derivation {
+                    selected_output: v2_out,
+                    derivation: v2_dev,
+                }),
+            ) => {
+                if v1_out != v2_out {
+                    return Ok(false);
+                }
+
+                Ok(v1_dev.path(&v1_out) == v2_dev.path(&v2_out))
+            }
+            (Self::AttrSet(_), Self::AttrSet(_)) => Ok(false),
             (Self::Bool(v1), Self::Bool(v2)) => Ok(v1 == v2),
             (Self::Float(v1), Self::Float(v2)) => Ok(v1 == v2),
             (Self::Float(v1), Self::Int(v2)) => Ok(*v1 == *v2 as f64),
@@ -265,20 +122,7 @@ impl NixValue {
             ));
         };
 
-        Ok(set.get(attr).cloned())
-    }
-
-    /// Returns (new_value, old_value)
-    #[nix_macros::profile]
-    pub fn insert(&mut self, attr: String, value: NixVar) -> Option<(NixVar, Option<NixVar>)> {
-        let NixValue::AttrSet(set) = self else {
-            todo!("Error handling");
-            // return Err(());
-        };
-
-        let old = set.insert(attr, value.clone());
-
-        Some((value, old))
+        Ok(set.get(attr))
     }
 
     pub fn as_bool(&self) -> Option<bool> {
@@ -410,6 +254,25 @@ impl NixValue {
             None
         }
     }
+
+    pub fn cast_lambda(&self, backtrace: &NixBacktrace) -> NixResult<NixLambda> {
+        if let Some(lambda) = self.as_lambda().cloned() {
+            Ok(lambda)
+        } else if let Some(functor) = self.as_attr_set().and_then(|set| set.get("__functor")) {
+            functor
+                .resolve(backtrace)?
+                .borrow()
+                .as_lambda()
+                .cloned()
+                .ok_or_else(|| todo!("Error handling: Lambda cast"))
+        } else {
+            Err(backtrace.to_error(
+                NixLabelKind::Error,
+                NixLabelMessage::Empty,
+                "Cannot cast to lambda",
+            ))
+        }
+    }
 }
 
 impl PartialEq for NixLambda {
@@ -430,7 +293,10 @@ impl NixLambda {
 
                 match param {
                     crate::NixLambdaParam::Ident(ident) => {
-                        scope.set_variable(ident.clone(), value);
+                        scope
+                            .variables
+                            .borrow_mut()
+                            .insert_var(ident.clone(), value);
                     }
                     crate::NixLambdaParam::Pattern(pattern) => {
                         let argument_var = value.resolve(backtrace)?;
@@ -451,7 +317,7 @@ impl NixLambda {
                                 .text()
                                 .to_owned();
 
-                            scope.set_variable(
+                            scope.variables.borrow_mut().insert_var(
                                 varname,
                                 LazyNixValue::Concrete(argument_var.clone()).wrap_var(),
                             );
@@ -472,16 +338,23 @@ impl NixLambda {
                                 }
                             }
 
-                            let var = if let Some(var) = argument.get(varname).cloned() {
+                            let var = if let Some(var) = argument.get(varname) {
                                 var
                             } else if let Some(expr) = entry.default() {
-                                LazyNixValue::Pending(backtrace.clone(), scope.clone(), expr)
-                                    .wrap_var()
+                                LazyNixValue::Pending(
+                                    backtrace.clone(),
+                                    scope.clone().new_child(),
+                                    expr,
+                                )
+                                .wrap_var()
                             } else {
                                 todo!("Error handling: Require {varname}");
                             };
 
-                            scope.set_variable(varname.to_owned(), var.clone());
+                            scope
+                                .variables
+                                .borrow_mut()
+                                .insert_var(varname.to_owned(), var.clone());
                         }
 
                         if let Some(unused) = unused {

@@ -5,157 +5,15 @@ use rnix::ast::{self, AstToken, HasEntry};
 use rowan::ast::AstNode;
 
 use crate::result::{NixBacktrace, NixSpan};
-use crate::value::{NixLambda, NixList};
+use crate::value::attrset::AttrsetBuilder;
+use crate::value::{NixAttrSet, NixLambda, NixList};
 use crate::{
-    LazyNixValue, NixAttrSet, NixBacktraceKind, NixError, NixLabel, NixLabelKind, NixLabelMessage,
-    NixLambdaParam, NixResult, NixValue, NixValueWrapped, NixVar, Scope,
+    LazyNixValue, NixBacktraceKind, NixError, NixLabel, NixLabelKind, NixLabelMessage,
+    NixLambdaParam, NixResult, NixValue, NixVar, Scope,
 };
 
 impl Scope {
-    fn insert_to_attrset(
-        self: &Rc<Self>,
-        backtrace: &NixBacktrace,
-        out: NixValueWrapped,
-        attrpath: ast::Attrpath,
-        attr_value: ast::Expr,
-    ) -> NixResult {
-        let mut attr_path: Vec<ast::Attr> = attrpath.attrs().collect();
-        let last_attr_path = attr_path
-            .pop()
-            .expect("Attrpath requires at least one attribute");
-
-        let target =
-            self.resolve_attr_set_path(backtrace, out.clone(), attr_path.into_iter())??;
-
-        if !target.borrow().is_attr_set() {
-            todo!("Error handling")
-        };
-
-        let attr = self.resolve_attr(backtrace, &last_attr_path)?;
-
-        // non-storeable attributes are ignored as empty strings
-        if !attr.is_empty() {
-            let child = LazyNixValue::Pending(
-                self.new_backtrace(backtrace, &attr_value),
-                self.clone().new_child(),
-                attr_value,
-            )
-            .wrap_var();
-
-            let mut target = target.borrow_mut();
-            let set = target.as_attr_set_mut().unwrap();
-
-            set.insert(attr, child);
-        }
-
-        Ok(out)
-    }
-
-    fn insert_entry_to_attrset(
-        self: &Rc<Self>,
-        backtrace: &NixBacktrace,
-        out: NixValueWrapped,
-        entry: ast::Entry,
-    ) -> NixResult {
-        match entry {
-            ast::Entry::Inherit(entry) => {
-                let from = entry.from().map(|from| {
-                    (
-                        LazyNixValue::Pending(
-                            self.new_backtrace(backtrace, &from),
-                            self.clone(),
-                            from.expr().unwrap(),
-                        )
-                        .wrap_var(),
-                        from,
-                    )
-                });
-
-                for attr_node in entry.attrs() {
-                    let attr = self.resolve_attr(backtrace, &attr_node)?;
-
-                    let attr_node = attr_node.clone();
-                    let file = self.file.clone();
-
-                    let value = if let Some((from, from_expr)) = &from {
-                        let attr = attr.clone();
-                        let from = from.clone();
-                        let from_expr = from_expr.clone();
-
-                        LazyNixValue::new_eval(
-                            self.new_backtrace(backtrace, &from_expr),
-                            Box::new(move |backtrace| {
-                                from.resolve(&backtrace)?
-                                    .borrow()
-                                    .as_attr_set()
-                                    .unwrap()
-                                    .get(&attr)
-                                    .cloned()
-                                    .ok_or_else(|| {
-                                        backtrace.to_labeled_error(
-                                            vec![
-                                                NixLabel::new(
-                                                    NixSpan::from_ast_node(&file, &attr_node)
-                                                        .into(),
-                                                    NixLabelMessage::AttributeMissing,
-                                                    NixLabelKind::Error,
-                                                ),
-                                                NixLabel::new(
-                                                    NixSpan::from_ast_node(&file, &from_expr)
-                                                        .into(),
-                                                    NixLabelMessage::Custom(
-                                                        "Parent attrset".to_owned(),
-                                                    ),
-                                                    NixLabelKind::Help,
-                                                ),
-                                            ],
-                                            format!("Attribute '\x1b[1;95m{attr}\x1b[0m' missing"),
-                                        )
-                                    })?
-                                    .resolve(&backtrace)
-                            }),
-                        )
-                    } else {
-                        let scope = self.clone();
-                        let attr = attr.clone();
-
-                        LazyNixValue::new_eval(
-                            self.new_backtrace(backtrace, &attr_node),
-                            Box::new(move |backtrace| {
-                                let Some(value) = scope.get_variable(attr.clone()) else {
-                                    return Err(backtrace.to_labeled_error(
-                                        vec![NixLabel::new(
-                                            NixSpan::from_ast_node(&file, &attr_node).into(),
-                                            NixLabelMessage::VariableNotFound,
-                                            NixLabelKind::Error,
-                                        )],
-                                        format!("Variable '{attr} not found"),
-                                    ));
-                                };
-
-                                value.resolve(&backtrace)
-                            }),
-                        )
-                    };
-
-                    out.borrow_mut()
-                        .as_attr_set_mut()
-                        .unwrap()
-                        .insert(attr, value.wrap_var());
-                }
-
-                Ok(out)
-            }
-            ast::Entry::AttrpathValue(entry) => self.insert_to_attrset(
-                backtrace,
-                out,
-                entry.attrpath().unwrap(),
-                entry.value().unwrap(),
-            ),
-        }
-    }
-
-    fn new_backtrace(
+    pub fn new_backtrace(
         self: &Rc<Self>,
         backtrace: &NixBacktrace,
         node: &impl AstNode,
@@ -211,8 +69,7 @@ impl Scope {
         self.visit_expr(&lambda_backtrace, node.lambda().unwrap())?
             .resolve(&lambda_backtrace)?
             .borrow()
-            .as_lambda()
-            .ok_or_else(|| todo!("Error handling: Lambda cast"))
+            .cast_lambda(backtrace)
             .and_then(|l| {
                 let backtrace = &backtrace.change_span((&self.file, &node.argument().unwrap()));
 
@@ -264,18 +121,24 @@ impl Scope {
             let scope = self.clone().new_child();
 
             for entry in node.entries() {
-                scope.insert_entry_to_attrset(backtrace, scope.variables.clone(), entry)?;
+                scope
+                    .variables
+                    .borrow_mut()
+                    .insert_entry(&scope, backtrace, entry)?;
             }
 
-            Ok(LazyNixValue::Concrete(scope.variables.clone()).wrap_var())
+            let mut scope = scope.variables.borrow_mut();
+            let out = scope.cached();
+
+            Ok(NixValue::AttrSet(NixAttrSet::Dynamic(out)).wrap_var())
         } else {
-            let out = NixValue::AttrSet(NixAttrSet::new()).wrap();
+            let mut out = AttrsetBuilder::new();
 
             for entry in node.entries() {
-                self.insert_entry_to_attrset(backtrace, out.clone(), entry)?;
+                out.insert_entry(self, backtrace, entry)?;
             }
 
-            Ok(LazyNixValue::Concrete(out).wrap_var())
+            Ok(NixValue::AttrSet(NixAttrSet::Dynamic(out.finish().into())).wrap_var())
         }
     }
 
@@ -587,9 +450,9 @@ impl Scope {
         node: ast::LetIn,
     ) -> NixResult<NixVar> {
         for entry in node.entries() {
-            self.insert_entry_to_attrset(
+            self.variables.borrow_mut().insert_entry(
+                self,
                 &self.new_backtrace(backtrace, &entry),
-                self.variables.clone(),
                 entry,
             )?;
         }
@@ -808,12 +671,13 @@ impl Scope {
             .visit_expr(backtrace, node.namespace().unwrap())?
             .resolve(backtrace)?;
 
-        if !namespace.borrow().is_attr_set() {
+        let namespace = namespace.borrow();
+        let Some(namespace) = namespace.as_attr_set() else {
             todo!("Error handling")
-        }
+        };
 
-        let scope = self.clone().new_child_from(namespace);
-
-        scope.visit_expr(backtrace, node.body().unwrap())
+        self.clone()
+            .new_child_from(AttrsetBuilder::from(namespace).wrap_mut())
+            .visit_expr(backtrace, node.body().unwrap())
     }
 }

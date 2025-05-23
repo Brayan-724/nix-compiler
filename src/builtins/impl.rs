@@ -1,14 +1,16 @@
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::hash::{Hash, Hasher};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::hash::{Hash as _, Hasher};
 use std::path::PathBuf;
 use std::rc::Rc;
 
 use nix_macros::{builtin, gen_builtins};
 
-use crate::value::{NixAttrSet, NixLambda, NixList};
+use crate::derivation::hash::Hash;
+use crate::derivation::{ContentAddressMethod, Derivation, DerivationOutput};
+use crate::value::{NixAttrSet, NixAttrSetDynamic, NixLambda, NixList};
 use crate::{
-    LazyNixValue, NixBacktrace, NixLabelKind, NixLabelMessage, NixLambdaParam, NixResult, NixValue,
-    NixValueWrapped, NixVar, Scope,
+    IntoT, LazyNixValue, NixBacktrace, NixLabelKind, NixLabelMessage, NixLambdaParam, NixResult,
+    NixValue, NixValueWrapped, NixVar, Scope,
 };
 
 use super::hash;
@@ -55,12 +57,7 @@ pub fn any(backtrace: &NixBacktrace, callback: NixLambda, list: NixList) {
 }
 
 #[builtin]
-pub fn attr_names(set: NixValueWrapped) {
-    let set = set.borrow();
-    let Some(set) = set.as_attr_set() else {
-        todo!("Error handling");
-    };
-
+pub fn attr_names(set: NixAttrSet) {
     let names = set
         .keys()
         .cloned()
@@ -106,7 +103,7 @@ pub fn attr_values(set: NixValueWrapped) {
         todo!("Error handling");
     };
 
-    let values = set.values().cloned().collect::<Vec<NixVar>>();
+    let values = set.values().collect::<Vec<NixVar>>();
 
     Ok(NixValue::List(NixList(Rc::new(values))).wrap())
 }
@@ -200,6 +197,117 @@ pub fn concat_strings_sep(backtrace: &NixBacktrace, sep: String, list: NixList) 
     Ok(NixValue::String(list.join(&sep)).wrap())
 }
 
+#[builtin("derivation")]
+pub fn derivation_impl(backtrace: &NixBacktrace, argument: NixValueWrapped) {
+    let argument = argument.borrow();
+    let argument = argument
+        .as_attr_set()
+        .ok_or_else(|| todo!("Error handling"))?;
+
+    let name = argument
+        .get("name")
+        .ok_or_else(|| todo!("Error handling: name is required"))?
+        .resolve(backtrace)?
+        .borrow()
+        .cast_to_string()
+        .ok_or_else(|| todo!("Error handling: string cast"))?;
+
+    let builder = argument
+        .get("builder")
+        .ok_or_else(|| todo!("Error handling: builder is required"))?
+        .resolve(backtrace)?
+        .borrow()
+        .cast_to_string()
+        .ok_or_else(|| todo!("Error handling: string cast"))?;
+
+    let system = argument
+        .get("system")
+        .ok_or_else(|| todo!("Error handling: system is required"))?
+        .resolve(backtrace)?
+        .borrow()
+        .cast_to_string()
+        .ok_or_else(|| todo!("Error handling: string cast"))?;
+
+    let args = if let Some(args) = argument.get("args") {
+        args.resolve(backtrace)?
+            .borrow()
+            .as_list()
+            .ok_or_else(|| todo!("Error handling: list cast"))?
+            .0
+            .iter()
+            .map(|e| {
+                e.resolve(backtrace)?
+                    .borrow()
+                    .cast_to_string()
+                    .ok_or_else(|| todo!("Error handling: string cast"))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        Default::default()
+    };
+
+    let outputs = if let Some(outputs) = argument.get("outputs") {
+        let mut res = BTreeMap::new();
+
+        for output in outputs
+            .resolve(backtrace)?
+            .borrow()
+            .as_list()
+            .ok_or_else(|| todo!("Error handling: list cast"))?
+            .0
+            .iter()
+            .map(|o| o.resolve(backtrace))
+        {
+            let output = output?
+                .borrow()
+                .cast_to_string()
+                .ok_or_else(|| todo!("Error handling: string cast"))?;
+
+            res.insert(
+                output,
+                DerivationOutput::CAFixed {
+                    method: ContentAddressMethod::NixArchive,
+                    hash: Hash::new_empty(hash::Algorithm::SHA256),
+                },
+            );
+        }
+
+        res
+    } else {
+        BTreeMap::from_iter([(
+            "out".to_owned(),
+            DerivationOutput::CAFixed {
+                method: ContentAddressMethod::NixArchive,
+                hash: Hash::new_empty(hash::Algorithm::SHA256),
+            },
+        )])
+    };
+
+    let selected_output = outputs
+        .first_key_value()
+        .expect("At least one output")
+        .0
+        .clone();
+
+    let out = Derivation {
+        outputs,
+        input_derivations: Default::default(),
+        input_sources: Default::default(),
+        platform: system,
+        builder: builder.into(),
+        args,
+        env: Default::default(),
+        name,
+        extra_fields: Default::default(),
+    };
+
+    Ok(NixValue::AttrSet(NixAttrSet::Derivation {
+        selected_output,
+        derivation: out.into(),
+    })
+    .wrap())
+}
+
 #[builtin]
 pub fn dir_of(s: NixValueWrapped) {
     let s = s.borrow();
@@ -286,16 +394,17 @@ pub fn foldl_(
 #[builtin]
 pub fn function_args(callback: NixLambda) {
     match callback {
-        NixLambda::Apply(_, NixLambdaParam::Pattern(param), _) => Ok(NixValue::AttrSet(
-            NixAttrSet::from_iter(param.pat_entries().map(|p| {
+        NixLambda::Apply(_, NixLambdaParam::Pattern(param), _) => {
+            Ok(NixAttrSetDynamic::from_iter(param.pat_entries().map(|p| {
                 let name = p.ident().unwrap().ident_token().unwrap().to_string();
                 let value = p.default().is_some();
 
                 (name, NixValue::Bool(value).wrap_var())
-            })),
-        )
-        .wrap()),
-        _ => Ok(NixValue::AttrSet(NixAttrSet::new()).wrap()),
+            }))
+            .into_t::<NixValue>()
+            .wrap())
+        }
+        _ => Ok(NixAttrSetDynamic::new().into_t::<NixValue>().wrap()),
     }
 }
 
@@ -385,7 +494,7 @@ pub fn generic_closure(backtrace: &NixBacktrace, argument: NixValueWrapped) {
             .ok_or_else(|| todo!("Error handling: Getting key"))?;
 
         let mut hasher = std::hash::DefaultHasher::new();
-        let key = hash_var(backtrace, key, &mut hasher)?;
+        let key = hash_var(backtrace, &key, &mut hasher)?;
 
         if !done_keys.insert(key) {
             continue;
@@ -556,7 +665,7 @@ pub fn list_to_attrs(backtrace: &NixBacktrace, list: NixList) {
                     todo!("Error handling!");
                 };
 
-                (set.get("name").cloned(), set.get("value").cloned())
+                (set.get("name"), set.get("value"))
             };
 
             let Some(name) = name else {
@@ -576,9 +685,9 @@ pub fn list_to_attrs(backtrace: &NixBacktrace, list: NixList) {
 
             Ok((name, value))
         })
-        .collect::<NixResult<NixAttrSet>>()?;
+        .collect::<NixResult<NixAttrSetDynamic>>()?;
 
-    Ok(NixValue::AttrSet(out).wrap())
+    Ok(out.into_t::<NixValue>().wrap())
 }
 
 #[builtin]
@@ -601,7 +710,7 @@ pub fn map_attrs(backtrace: &NixBacktrace, callback: NixLambda, set: NixValueWra
         todo!("Error handling");
     };
 
-    let mut out = NixAttrSet::new();
+    let mut out = NixAttrSetDynamic::new();
 
     for (key, value) in set.iter() {
         let new_value = {
@@ -628,7 +737,7 @@ pub fn map_attrs(backtrace: &NixBacktrace, callback: NixLambda, set: NixValueWra
         out.insert(key.clone(), new_value.wrap_var());
     }
 
-    Ok(NixValue::AttrSet(out).wrap())
+    Ok(out.into_t::<NixValue>().wrap())
 }
 
 #[builtin]
@@ -772,7 +881,7 @@ pub fn remove_attrs(backtrace: &NixBacktrace, attrset: NixValueWrapped, attrs: N
         todo!("Error handling")
     }
 
-    let mut attrset = attrset.borrow().as_attr_set().unwrap().clone();
+    let attrset = attrset.borrow().as_attr_set().unwrap().clone();
 
     let attrs = attrs
         .0
@@ -783,11 +892,11 @@ pub fn remove_attrs(backtrace: &NixBacktrace, attrset: NixValueWrapped, attrs: N
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    for attr in attrs {
-        attrset.remove(&attr);
-    }
-
-    Ok(NixValue::AttrSet(attrset).wrap())
+    Ok(
+        NixAttrSetDynamic::from_iter(attrset.into_iter().filter(|(k, _)| !attrs.contains(k)))
+            .into_t::<NixValue>()
+            .wrap(),
+    )
 }
 
 #[builtin]
@@ -887,20 +996,20 @@ pub fn trace(backtrace: &NixBacktrace, message: NixValueWrapped, argument: NixVa
 #[builtin()]
 pub fn try_eval(backtrace: &NixBacktrace, argument: NixVar) {
     if let Err(_) = argument.resolve(backtrace) {
-        let mut result = NixAttrSet::new();
+        let mut result = NixAttrSetDynamic::new();
         result.insert("success".to_string(), NixValue::Bool(false).wrap_var());
         // `value = false;` is unfortunate but removing it is a breaking change.
         // https://github.com/NixOS/nix/blob/master/src/libexpr/primops.cc#L942
         result.insert("value".to_string(), NixValue::Bool(false).wrap_var());
 
-        return Ok(NixValue::AttrSet(result).wrap());
+        return Ok(result.into_t::<NixValue>().wrap());
     };
 
-    let mut result = NixAttrSet::new();
+    let mut result = NixAttrSetDynamic::new();
     result.insert("success".to_string(), NixValue::Bool(true).wrap_var());
     result.insert("value".to_string(), argument);
 
-    return Ok(NixValue::AttrSet(result).wrap());
+    return Ok(result.into_t::<NixValue>().wrap());
 }
 
 #[builtin]

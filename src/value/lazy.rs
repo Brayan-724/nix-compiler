@@ -5,12 +5,14 @@ use std::rc::Rc;
 
 use rnix::ast;
 
+use crate::value::NixAttrSet;
 use crate::{
     NixBacktrace, NixError, NixLabel, NixLabelKind, NixLabelMessage, NixResult, NixSpan,
     NixValueWrapped, NixVar, Scope,
 };
 
-use super::{NixAttrSet, NixLambda, NixValue};
+use super::attrset::AttrsetBuilder;
+use super::{NixAttrSetDynamic, NixLambda, NixValue};
 
 #[derive(Clone)]
 pub enum LazyNixValue {
@@ -92,11 +94,11 @@ impl LazyNixValue {
                 LazyNixValue::new_eval(
                     NixBacktrace::new_none(span.clone(), Some(backtrace.clone())),
                     Box::new(move |backtrace| {
-                        let scope = scope.new_child();
+                        let mut vars = AttrsetBuilder::new();
 
                         match param {
                             crate::NixLambdaParam::Ident(ident) => {
-                                scope.set_variable(ident, value);
+                                vars.insert_var(ident, value);
                             }
                             crate::NixLambdaParam::Pattern(_) => {
                                 return Err(crate::NixError::todo(
@@ -107,7 +109,10 @@ impl LazyNixValue {
                             }
                         };
 
-                        scope.visit_expr(&backtrace, expr)?.resolve(&backtrace)
+                        scope
+                            .new_child_from(vars.wrap_mut())
+                            .visit_expr(&backtrace, expr)?
+                            .resolve(&backtrace)
                     }),
                 )
             }
@@ -216,13 +221,13 @@ impl LazyNixValue {
                             .as_attr_set()
                             .ok_or_else(|| todo!("Error handling"))
                             .map(|rhs| {
-                                let mut lhs_set = lhs.borrow().as_attr_set().cloned().unwrap();
-                                let mut lhs = NixAttrSet::new();
+                                let lhs_set = lhs.borrow().as_attr_set().cloned().unwrap();
+                                let mut lhs = NixAttrSetDynamic::new();
 
-                                lhs.append(&mut lhs_set);
-                                lhs.append(&mut rhs.clone());
+                                lhs.extend(&lhs_set);
+                                lhs.extend(rhs);
 
-                                NixValue::AttrSet(lhs).wrap()
+                                NixValue::AttrSet(NixAttrSet::Dynamic(lhs.into())).wrap()
                             })?;
 
                         *this.borrow_mut().deref_mut() = LazyNixValue::UpdateResolve {
@@ -243,13 +248,14 @@ impl LazyNixValue {
                                 .as_attr_set()
                                 .ok_or_else(|| todo!("Error handling"))
                                 .map(|rhs| {
-                                    let mut lhs_set = lhs.borrow().as_attr_set().cloned().unwrap();
-                                    let mut lhs = NixAttrSet::new();
+                                    let lhs_set = lhs.borrow().as_attr_set().cloned().unwrap();
+                                    let mut lhs = NixAttrSetDynamic::new();
 
-                                    lhs.append(&mut lhs_set);
-                                    lhs.append(&mut rhs.clone());
+                                    lhs.extend(&lhs_set);
+                                    lhs.extend(rhs);
 
-                                    let value = NixValue::AttrSet(lhs).wrap();
+                                    let value =
+                                        NixValue::AttrSet(NixAttrSet::Dynamic(lhs.into())).wrap();
 
                                     *this.borrow_mut().deref_mut() =
                                         LazyNixValue::Concrete(value.clone());
@@ -301,7 +307,7 @@ impl LazyNixValue {
 
         if value.borrow().is_attr_set() {
             let values = if let Some(set) = value.borrow().as_attr_set() {
-                set.values().cloned().collect::<Vec<_>>()
+                set.values().collect::<Vec<_>>()
             } else {
                 unreachable!()
             };

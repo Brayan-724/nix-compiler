@@ -7,26 +7,32 @@ pub mod hash;
 pub mod parser;
 
 use core::fmt;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use hash::Hash;
 
 use crate::builtins::hash::{Algorithm, Hasher};
+use crate::value::NixAttrSet;
+use crate::{NixValue, NixVar};
 
 // NOTE: Keep this ordered in the `.drv` way, as there appears
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Derivation {
-    outputs: BTreeMap<String, DerivationOutput>,
+    pub outputs: BTreeMap<String, DerivationOutput>,
     // (input_name, outputs[])
-    input_derivations: BTreeMap<String, Vec<String>>,
-    input_sources: Vec<PathBuf>,
-    platform: String,
-    builder: PathBuf,
-    args: Vec<String>,
-    env: Vec<(String, String)>,
-    name: String,
+    pub input_derivations: BTreeMap<String, Vec<String>>,
+    pub input_sources: Vec<PathBuf>,
+    pub platform: String,
+    pub builder: PathBuf,
+    pub args: Vec<String>,
+    pub env: Vec<(String, String)>,
+    pub name: String,
+
+    // nix value things
+    pub extra_fields: HashMap<String, NixVar>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -180,48 +186,7 @@ impl fmt::Display for Derivation {
                         ))?;
                         f.write_fmt(format_args!("      \"method\": \"{}\",\n", method))?;
 
-                        let path_name = if k == "out" {
-                            self.name.clone()
-                        } else {
-                            format!("{}-{k}", self.name)
-                        };
-
-                        if *method == ContentAddressMethod::Git && hash.algorithm != Algorithm::SHA1
-                        {
-                            // Git file ingestion must use SHA-1 hash
-                            // https://github.com/NixOS/nix/blob/master/src/libstore/store-api.cc#L125
-                            return Err(fmt::Error);
-                        }
-
-                        let path = if *method == ContentAddressMethod::NixArchive
-                            && hash.algorithm == Algorithm::SHA256
-                        {
-                            let hash_part = {
-                                let hashed = Hasher::new(Algorithm::SHA256).finish_with(
-                                    format!(
-                                        "source:{}:{}:/nix/store:{path_name}",
-                                        hash.algorithm,
-                                        hash.print_base16()
-                                    )
-                                    .as_str()
-                                    .as_bytes(),
-                                );
-
-                                let mut hash_part = Hash::new_empty(hash.algorithm.clone());
-                                hash_part.hash_size = 20;
-
-                                for i in 0..hash.hash_size {
-                                    hash_part.hash[i % 20] ^= hashed[i];
-                                }
-
-                                hash_part.print_base32()
-                            };
-
-                            // FIXME: This should be able to change the nix store folder
-                            format!("/nix/store/{hash_part}-{path_name}")
-                        } else {
-                            todo!()
-                        };
+                        let path = self.path(k).ok_or(fmt::Error)?;
 
                         f.write_fmt(format_args!("      \"path\": {:?}\n", path))?;
                     }
@@ -264,6 +229,76 @@ impl fmt::Display for Algorithm {
             Algorithm::SHA1 => f.write_str("sha1"),
             Algorithm::SHA256 => f.write_str("sha256"),
             Algorithm::SHA512 => f.write_str("sha512"),
+        }
+    }
+}
+
+impl Derivation {
+    pub fn get(self: &Rc<Self>, key: &str) -> Option<NixVar> {
+        if self.outputs.contains_key(key) {
+            Some(
+                NixValue::AttrSet(NixAttrSet::Derivation {
+                    selected_output: key.to_owned(),
+                    derivation: self.clone(),
+                })
+                .wrap_var(),
+            )
+        } else {
+            self.extra_fields.get(key).cloned()
+        }
+    }
+
+    pub fn path(&self, name: &str) -> Option<String> {
+        let output = self.outputs.get(name)?;
+
+        let path_name = if name == "out" {
+            self.name.clone()
+        } else {
+            format!("{}-{name}", self.name)
+        };
+
+        match output {
+            DerivationOutput::Deferred => todo!(),
+            DerivationOutput::CAFloating { .. } => todo!(),
+            DerivationOutput::CAFixed { method, hash } => {
+                if *method == ContentAddressMethod::Git && hash.algorithm != Algorithm::SHA1 {
+                    // Git file ingestion must use SHA-1 hash
+                    // https://github.com/NixOS/nix/blob/master/src/libstore/store-api.cc#L125
+                    return None;
+                }
+
+                if *method == ContentAddressMethod::NixArchive
+                    && hash.algorithm == Algorithm::SHA256
+                {
+                    let hash_part = {
+                        let hashed = Hasher::new(Algorithm::SHA256).finish_with(
+                            format!(
+                                "source:{}:{}:/nix/store:{path_name}",
+                                hash.algorithm,
+                                hash.print_base16()
+                            )
+                            .as_str()
+                            .as_bytes(),
+                        );
+
+                        let mut hash_part = Hash::new_empty(hash.algorithm.clone());
+                        hash_part.hash_size = 20;
+
+                        for i in 0..hash.hash_size {
+                            hash_part.hash[i % 20] ^= hashed[i];
+                        }
+
+                        hash_part.print_base32()
+                    };
+
+                    // FIXME: This should be able to change the nix store folder
+                    Some(format!("/nix/store/{hash_part}-{path_name}"))
+                } else {
+                    todo!()
+                }
+            }
+            DerivationOutput::Impure { .. } => todo!(),
+            DerivationOutput::InputAddressed(_) => todo!(),
         }
     }
 }

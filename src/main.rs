@@ -13,7 +13,20 @@ pub use result::{
 };
 pub use scope::{FileScope, Scope};
 use std::env;
-pub use value::{LazyNixValue, NixAttrSet, NixLambdaParam, NixValue, NixValueWrapped, NixVar};
+pub use value::{
+    LazyNixValue, NixAttrSetDynamic, NixLambdaParam, NixValue, NixValueWrapped, NixVar,
+};
+
+pub trait IntoT {
+    fn into_t<T>(self) -> T
+    where
+        Self: Into<T>,
+    {
+        self.into()
+    }
+}
+
+impl<T> IntoT for T {}
 
 fn main() {
     let mut iter = env::args().skip(1).peekable();
@@ -55,8 +68,13 @@ fn main() {
         std::process::exit(1);
     });
 
+    println!("{result:#?}");
+
     let outputs = if is_flake {
-        flake::resolve_flake(&backtrace, result).unwrap()
+        flake::resolve_flake(&backtrace, result).unwrap_or_else(|err| {
+            eprintln!("{err}");
+            std::process::exit(1);
+        })
     } else {
         result
     };

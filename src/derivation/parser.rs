@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::ControlFlow;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -71,6 +71,8 @@ impl FromStr for Derivation {
             args,
             env,
             name,
+
+            extra_fields: HashMap::new(),
         })
     }
 }
